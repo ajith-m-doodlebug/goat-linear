@@ -21,7 +21,11 @@ class Document(Base):
     name = Column(String(512), nullable=False)  # filename or URL
     source_type = Column(String(32), nullable=False, default="file")  # file, url
     storage_path = Column(String(1024), nullable=True)  # relative path for file uploads
-    status = Column(Enum(DocumentStatus), default=DocumentStatus.PENDING, nullable=False)
+    status = Column(
+        Enum(DocumentStatus, values_callable=lambda obj: [e.value for e in obj]),
+        default=DocumentStatus.PENDING,
+        nullable=False,
+    )
     error_message = Column(Text, nullable=True)
     metadata_ = Column("metadata", JSONB, nullable=True)
     config = Column(JSONB, nullable=True)  # override chunking + embedding for this document

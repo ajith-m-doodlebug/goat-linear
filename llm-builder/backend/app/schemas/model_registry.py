@@ -11,7 +11,6 @@ class ModelRegistryBase(BaseModel):
     api_key_encrypted: str | None = None
     config: dict[str, Any] | None = None
     version: str | None = None
-    base_model_id: str | None = None
 
 
 class ModelRegistryCreate(ModelRegistryBase):
@@ -29,7 +28,6 @@ class ModelRegistryUpdate(BaseModel):
 
 class ModelRegistryResponse(ModelRegistryBase):
     id: str
-    training_metadata: dict | None = None
     created_at: str
 
     class Config:

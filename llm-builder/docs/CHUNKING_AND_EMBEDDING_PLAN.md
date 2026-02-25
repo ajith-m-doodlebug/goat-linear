@@ -129,7 +129,7 @@ Users can create **named chunking + embedding configs** (presets) in a dedicated
 ### Phase 4: Frontend
 
 9. **New page under More: "Chunking & embedding" (or "RAG configs")**
-   - Route: `/dashboard/rag-configs`. Add to sidebar under **More** (e.g. above or below Training, Audit, API Keys).
+   - Route: `/dashboard/rag-configs`. Add to sidebar under **More**.
    - Page: List of saved presets (name, optional description, summary of config). Buttons: **New preset**, and per row: Edit, Delete.
    - Create/Edit preset modal: same form as chunking + embedding (strategy, chunk size, overlap, embedding model, query prefix); plus **Name** (required) and **Description** (optional). Save as preset via API.
 

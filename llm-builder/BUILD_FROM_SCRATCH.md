@@ -9,13 +9,13 @@
 ## 1. Project overview
 
 - **Name:** LLM Builder (Docker Compose project name: **goat**)
-- **Purpose:** Self-hosted AI infrastructure: data ingestion, RAG, fine-tuning, model registry, deployments, and chat with roles and audit.
+- **Purpose:** Self-hosted AI infrastructure: data ingestion, RAG, fine-tuning, model registry, deployments, and chat with roles.
 - **Stack:**
   - **Frontend:** Next.js 14, React 18, TypeScript, Tailwind CSS
   - **Backend:** FastAPI, SQLAlchemy 2, Alembic, Redis (RQ), PostgreSQL 16, Qdrant
   - **Deploy:** Docker Compose; optional GPU stack (Ollama, vLLM) via `docker-compose.gpu.yml`
-- **Features:** Auth (JWT + API keys), Knowledge bases & document upload, RAG (chunk/embed/Qdrant, hybrid retrieval), Model registry (Ollama/vLLM/OpenAI/custom), Prompt templates, Deployments (model + KB + template), Chat (sessions/messages), Training (datasets/jobs stub), Audit logs, API keys, RAG config presets.
-- **Roles:** User, Builder, Admin, Auditor, Super Admin. First registered user becomes Super Admin.
+- **Features:** Auth (JWT), Knowledge bases & document upload, RAG (chunk/embed/Qdrant, hybrid retrieval), Model registry (Ollama/vLLM/OpenAI/custom), Prompt templates, Deployments (model + KB + template), Chat (sessions/messages), RAG config presets.
+- **Roles:** Single user type: **admin**. First registered user (and every user) is admin.
 
 ---
 
@@ -45,8 +45,6 @@ backend/
       003_model_registry.py
       004_prompt_templates_deployments.py
       005_chat_sessions_messages.py
-      006_training_datasets_jobs.py
-      007_audit_apikeys.py
   app/
     __init__.py
     main.py
@@ -56,9 +54,7 @@ backend/
       security.py
       deps.py
       queue.py
-      audit.py
       logging_config.py
-      api_key_auth.py
     db/
       __init__.py
       base.py
@@ -71,8 +67,6 @@ backend/
       prompt_template.py
       deployment.py
       chat.py
-      training.py
-      audit.py
       rag_config_preset.py
     schemas/
       __init__.py
@@ -94,9 +88,6 @@ backend/
         models.py
         deployments.py
         chat.py
-        training.py
-        audit.py
-        api_keys.py
         rag_configs.py
     services/
       __init__.py
@@ -110,7 +101,6 @@ backend/
       __init__.py
       runner.py
       ingest.py
-      training.py
 frontend/
   Dockerfile
   package.json
@@ -142,12 +132,6 @@ frontend/
       chat/
         page.tsx
       rag-configs/
-        page.tsx
-      training/
-        page.tsx
-      audit/
-        page.tsx
-      api-keys/
         page.tsx
   lib/
     api.ts
@@ -548,7 +532,6 @@ from app.core.config import get_settings
 from app.core.logging_config import setup_logging
 from app.api.v1 import api_router
 from app.db.base import engine, Base
-from app.core.audit import audit_middleware
 
 settings = get_settings()
 setup_logging(use_json=not settings.debug, level="DEBUG" if settings.debug else "INFO")
@@ -567,7 +550,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.middleware("http")(audit_middleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -622,15 +604,11 @@ Create these files under `backend/` with the following contents. For any file no
 
 **`backend/app/core/security.py`** — CryptContext bcrypt; verify_password, get_password_hash (truncate to 72 bytes for bcrypt); create_access_token, create_refresh_token, decode_token (jose JWT).
 
-**`backend/app/core/deps.py`** — get_db; get_current_user (Bearer token or X-API-Key via get_user_from_api_key); require_super_admin, require_admin, require_builder, require_user, require_auditor (role checks).
+**`backend/app/core/deps.py`** — get_db; get_current_user (Bearer token); require_admin (single role: admin).
 
 **`backend/app/core/queue.py`** — get_redis(), get_queue() returning RQ Queue "default".
 
-**`backend/app/core/audit.py`** — log_audit(user_id, api_key_id, action, resource_type, resource_id, request_id, details, ip_address) writes to AuditLog; audit_middleware sets request.state.request_id from X-Request-ID or uuid.
-
 **`backend/app/core/logging_config.py`** — JSONFormatter; setup_logging(use_json, level).
-
-**`backend/app/core/api_key_auth.py`** — API_KEY_HEADER = APIKeyHeader("X-API-Key"); hash_key, key_prefix, create_api_key_secret (llmb_ + token_urlsafe); get_user_from_api_key(db, raw_key) looks up ApiKey by key_hash, returns User if active.
 
 ### 5.2 DB
 
@@ -639,7 +617,7 @@ Create these files under `backend/` with the following contents. For any file no
 
 ### 5.3 Models (SQLAlchemy)
 
-Create all model files so that: User (id, email, hashed_password, full_name, role Enum, is_active, created_at, updated_at); KnowledgeBase (id, name, description, qdrant_collection_name, config JSONB, created_at, updated_at); Document (id, knowledge_base_id FK, name, source_type, storage_path, status Enum, error_message, metadata_, config, created_at, updated_at); ModelRegistry (id, name, model_type, provider, endpoint_url, model_id, api_key_encrypted, config, version, base_model_id, training_metadata, created_at, updated_at); PromptTemplate (id, name, content, version, created_at, updated_at); Deployment (id, name, model_id FK, knowledge_base_id FK, prompt_template_id FK, memory_turns, config, version, created_at, updated_at); ChatSession (id, deployment_id FK, user_id FK, title, created_at, updated_at); ChatMessage (id, session_id FK, role, content, citations JSONB, created_at); TrainingDataset (id, name, storage_path, format, row_count, created_at); TrainingJob (id, dataset_id FK, base_model_id FK, status, config, error_message, result_model_id FK, metrics, created_at, updated_at); AuditLog (id, user_id, api_key_id, action, resource_type, resource_id, request_id, details, ip_address, created_at); ApiKey (id, user_id, name, key_hash, key_prefix, scopes, last_used_at, created_at); RagConfigPreset (id, user_id FK, name, description, config JSONB, created_at, updated_at). Models __init__.py imports and re-exports all.
+Create all model files so that: User (id, email, hashed_password, full_name, role Enum, is_active, created_at, updated_at); KnowledgeBase (id, name, description, qdrant_collection_name, config JSONB, created_at, updated_at); Document (id, knowledge_base_id FK, name, source_type, storage_path, status Enum, error_message, metadata_, config, created_at, updated_at); ModelRegistry (id, name, model_type, provider, endpoint_url, model_id, api_key_encrypted, config, version, created_at, updated_at); PromptTemplate (id, name, content, version, created_at, updated_at); Deployment (id, name, model_id FK, knowledge_base_id FK, prompt_template_id FK, memory_turns, config, version, created_at, updated_at); ChatSession (id, deployment_id FK, user_id FK, title, created_at, updated_at); ChatMessage (id, session_id FK, role, content, citations JSONB, created_at); RagConfigPreset (id, user_id FK, name, description, config JSONB, created_at, updated_at). Models __init__.py imports and re-exports all.
 
 ### 5.4 Schemas (Pydantic)
 
@@ -654,7 +632,7 @@ Create schemas matching API: auth (LoginRequest, RefreshRequest, Token, TokenPay
 
 ```python
 from fastapi import APIRouter
-from app.api.v1 import auth, users, knowledge_bases, models, deployments, chat, training, audit, api_keys, rag_configs
+from app.api.v1 import auth, users, knowledge_bases, models, deployments, chat, rag_configs
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -663,23 +641,17 @@ api_router.include_router(knowledge_bases.router, prefix="/knowledge-bases", tag
 api_router.include_router(models.router, prefix="/models", tags=["models"])
 api_router.include_router(deployments.router, prefix="/deployments", tags=["deployments"])
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
-api_router.include_router(training.router, prefix="/training", tags=["training"])
-api_router.include_router(audit.router, prefix="/audit", tags=["audit"])
-api_router.include_router(api_keys.router, prefix="/api-keys", tags=["api-keys"])
 api_router.include_router(rag_configs.router, prefix="/rag-configs", tags=["rag-configs"])
 ```
 
 Implement each router as follows (or copy from the existing codebase):
 
-- **auth.py**: POST /register (UserCreate → first user Super Admin), POST /login (LoginRequest → Token, log_audit), POST /refresh (RefreshRequest → Token), GET /me (UserResponse).
+- **auth.py**: POST /register (UserCreate → every user gets role admin), POST /login (LoginRequest → Token), POST /refresh (RefreshRequest → Token), GET /me (UserResponse).
 - **users.py**: GET "", GET /me, GET /{user_id}, PATCH /{user_id} (require_admin; UserUpdate).
 - **knowledge_bases.py**: GET/POST "" (list/create KB), GET/PATCH/DELETE /{kb_id}; GET /{kb_id}/documents; POST /{kb_id}/upload (file + optional config/preset_id, enqueue run_ingest); POST /{kb_id}/search (body query, top_k); PATCH/DELETE /{kb_id}/documents/{document_id}; POST /{kb_id}/documents/{document_id}/ingest (re-queue ingest). Use require_builder for mutations; resolve config from preset when preset_id given.
 - **models.py**: GET/POST "" (list/create ModelRegistry), GET/PATCH/DELETE /{model_id}, POST /{model_id}/test (body prompt), GET /{model_id}/health (llm_client.health_check). require_builder.
-- **deployments.py**: GET/POST /prompt-templates, PATCH /prompt-templates/{id}; GET/POST "" (deployments), GET/PATCH/DELETE /{deployment_id}; POST /{deployment_id}/run (body question → run_rag, log_audit). require_builder for CRUD; get_current_user for run.
+- **deployments.py**: GET/POST /prompt-templates, PATCH /prompt-templates/{id}; GET/POST "" (deployments), GET/PATCH/DELETE /{deployment_id}; POST /{deployment_id}/run (body question → run_rag). require_builder for CRUD; get_current_user for run.
 - **chat.py**: POST /sessions (body deployment_id, title), GET /sessions (?deployment_id), PATCH/DELETE /sessions/{session_id}; GET /sessions/{session_id}/messages, POST /sessions/{session_id}/messages (body content → run_rag, save user+assistant messages, return response+citations); GET /sessions/{session_id}/messages/stream → 501 placeholder.
-- **training.py**: GET/POST /datasets (upload file, store under upload_dir/training_datasets), GET /jobs, POST /jobs (body dataset_id, base_model_id, config → enqueue run_training), GET /jobs/{job_id}. require_builder.
-- **audit.py**: GET /logs (?user_id, action, limit, offset). require_auditor.
-- **api_keys.py**: GET "", POST "" (body name → return key once), DELETE /{key_id}. get_current_user, scope to user's keys.
 - **rag_configs.py**: GET/POST "", GET/PATCH/DELETE /{preset_id}. get_current_user; presets scoped by user_id.
 
 ---
@@ -696,8 +668,7 @@ Implement each router as follows (or copy from the existing codebase):
 
 **Workers:**  
 - **runner.py**: RQ Worker(["default"], connection=Redis.from_url(settings.redis_url)); worker.work().  
-- **ingest.py**: run_ingest(document_id) — load doc and KB; read file from upload_dir; extract_text, chunk_text (effective config doc+kb); encode_passages; ensure_collection; delete_points_by_document; upsert points (payload: document_id, chunk_index, text, source, keywords); set doc.status COMPLETED/FAILED.  
-- **training.py**: run_training(job_id) — set RUNNING; load base model and dataset; stub: create new ModelRegistry fine_tuned linked to base, set job COMPLETED and result_model_id, metrics; on error set FAILED and error_message.
+- **ingest.py**: run_ingest(document_id) — load doc and KB; read file from upload_dir; extract_text, chunk_text (effective config doc+kb); encode_passages; ensure_collection; delete_points_by_document; upsert points (payload: document_id, chunk_index, text, source, keywords); set doc.status COMPLETED/FAILED.
 
 ---
 
@@ -705,19 +676,17 @@ Implement each router as follows (or copy from the existing codebase):
 
 **`backend/alembic.ini`**: script_location = alembic, sqlalchemy.url = postgresql://llmbuilder:llmbuilder@localhost:5432/llmbuilder (overridden by env.py from settings).
 
-**`backend/alembic/env.py`**: Load config; set sqlalchemy.url from get_settings().database_url; target_metadata = Base.metadata; import all models (User, KnowledgeBase, Document, ModelRegistry, PromptTemplate, Deployment, ChatSession, ChatMessage, TrainingDataset, TrainingJob, AuditLog, ApiKey); run_migrations_offline/online.
+**`backend/alembic/env.py`**: Load config; set sqlalchemy.url from get_settings().database_url; target_metadata = Base.metadata; import all models (User, KnowledgeBase, Document, ModelRegistry, PromptTemplate, Deployment, ChatSession, ChatMessage); run_migrations_offline/online.
 
 **`backend/alembic/script.py.mako`**: Standard Alembic mako (revision, down_revision, upgrade/downgrade).
 
-**Migrations (create in order; revision chain 001→002→…→007):**
+**Migrations (create in order; revision chain 001→002→…→005):**
 
-- **001_initial_users.py**: revision "001", down_revision None. Create ENUM role (super_admin, admin, builder, user, auditor); create table users (id, email, hashed_password, full_name, role, is_active, created_at, updated_at); ix_users_email unique.
+- **001_initial_users.py**: revision "001", down_revision None. Create ENUM role ('admin'); create table users (id, email, hashed_password, full_name, role, is_active, created_at, updated_at); ix_users_email unique.
 - **002_knowledge_bases_documents.py**: revision "002", down "001". Create knowledge_bases (id, name, description, qdrant_collection_name, config JSONB, created_at, updated_at), ix unique on qdrant_collection_name; create documentstatus enum (pending, processing, completed, failed); create documents (id, knowledge_base_id FK CASCADE, name, source_type, storage_path, status, error_message, metadata, config, created_at, updated_at), ix on knowledge_base_id; create rag_config_presets (id, user_id FK CASCADE, name, description, config JSONB, created_at, updated_at).
-- **003_model_registry.py**: revision "003", down "002". create model_registry (id, name, model_type, provider, endpoint_url, model_id, api_key_encrypted, config, version, base_model_id, training_metadata, created_at, updated_at).
+- **003_model_registry.py**: revision "003", down "002". create model_registry (id, name, model_type, provider, endpoint_url, model_id, api_key_encrypted, config, version, created_at, updated_at).
 - **004_prompt_templates_deployments.py**: revision "004", down "003". create prompt_templates; create deployments (model_id FK RESTRICT, knowledge_base_id FK SET NULL, prompt_template_id FK SET NULL, memory_turns, config, version, ...); indexes on model_id, knowledge_base_id.
 - **005_chat_sessions_messages.py**: revision "005", down "004". create chat_sessions (deployment_id FK CASCADE, user_id FK CASCADE, title, ...); create chat_messages (session_id FK CASCADE, role, content, citations JSONB, created_at); indexes.
-- **006_training_datasets_jobs.py**: revision "006", down "005". create training_datasets; create training_jobs (dataset_id FK CASCADE, base_model_id FK RESTRICT, status, config, error_message, result_model_id FK SET NULL, metrics, ...); indexes.
-- **007_audit_apikeys.py**: revision "007", down "006". create audit_logs (user_id, api_key_id, action, resource_type, resource_id, request_id, details, ip_address, created_at); create api_keys (user_id, name, key_hash, key_prefix, scopes, last_used_at, created_at); indexes.
 
 Implement downgrade() for each migration (drop tables/indexes in reverse order; drop enums where created).
 
@@ -743,10 +712,10 @@ Implement downgrade() for each migration (drop tables/indexes in reverse order; 
 - **lib/api.ts**: API_BASE from NEXT_PUBLIC_API_URL; setTokens, loadTokensFromStorage, clearTokens; apiRequest<T>(path, options) with Bearer token and refresh on 401; authApi (login, register, refresh, me). Types TokenResponse, UserResponse.
 
 **Dashboard:**  
-- **app/dashboard/layout.tsx**: "use client"; useEffect authApi.me else redirect /login; sidebar with nav (Home, Knowledge, Models, Deployments, Chat; Chunking & Embedding, Training, Audit, API Keys); TopBarProvider; header with title from TopBarContext and SettingsMenu; render children.  
+- **app/dashboard/layout.tsx**: "use client"; useEffect authApi.me else redirect /login; sidebar with nav (Home, Knowledge, Models, Deployments, Chat; Chunking & Embedding); TopBarProvider; header with title from TopBarContext and SettingsMenu; render children.  
 - **TopBarContext.tsx**: React context for title and action slot; getTitleFromPathname(pathname) map path to label.  
 - **SettingsMenu.tsx**: Dropdown for theme toggle and logout (clearTokens, push /).  
-- **Dashboard pages**: Each of dashboard/page.tsx (home), knowledge/page.tsx, models/page.tsx, deployments/page.tsx, chat/page.tsx, rag-configs/page.tsx, training/page.tsx, audit/page.tsx, api-keys/page.tsx — use apiRequest to fetch and display list/detail forms; use shared UI components (Button, Badge, Modal, PageHeader, EmptyState, RagConfigForm where applicable).  
+- **Dashboard pages**: Each of dashboard/page.tsx (home), knowledge/page.tsx, models/page.tsx, deployments/page.tsx, chat/page.tsx, rag-configs/page.tsx — use apiRequest to fetch and display list/detail forms; use shared UI components (Button, Badge, Modal, PageHeader, EmptyState, RagConfigForm where applicable).  
 - **app/login/page.tsx** and **app/register/page.tsx**: Form (email, password; register + full_name); on success setTokens and redirect to /dashboard.
 
 **UI components:** Implement Button, Badge, Modal, PageHeader, EmptyState, icons (e.g. Lucide-style placeholders), and RagConfigForm (chunk_strategy, chunk_size, chunk_overlap, embedding_model, embedding_query_prefix) so they match the design (Tailwind + CSS vars). **components/ui/index.ts** re-exports.
@@ -762,7 +731,7 @@ After creating all files:
 1. From the project root (e.g. `llm-builder/`): `chmod +x setup.sh start.sh stop.sh dev.sh`
 2. Run `./setup.sh` (creates .env from .env.example, builds images, starts postgres/redis/qdrant, runs `alembic upgrade head`, starts all services).
 3. Optionally for dev with hot reload: `./start.sh` (uses docker-compose.dev.yml; backend --reload, frontend npm run dev).
-4. Open http://localhost:3000 — register first user (becomes Super Admin), then use Knowledge, Models, Deployments, Chat, Training, Audit, API Keys, Chunking & Embedding.
+4. Open http://localhost:3000 — register first user (admin), then use Knowledge, Models, Deployments, Chat, Chunking & Embedding.
 5. API docs at http://localhost:8000/docs.
 
 **If you have the existing codebase:** You may copy any file not fully written above from the existing project into the new one so that paths and behavior match this spec. The directory structure and this document are the single source of truth for “building from scratch.”

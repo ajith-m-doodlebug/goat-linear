@@ -23,7 +23,7 @@ Containers and volumes are named under the **goat** project so they don’t clas
 - Docs: http://localhost:8000/docs  
 - Adminer (DB): http://localhost:8080 — login with Server `postgres`, User `llmbuilder`, Password `llmbuilder`, Database `llmbuilder`  
 
-Register a user and use **Knowledge** (upload docs, RAG), **Models** (Ollama/OpenAI/vLLM), **Deployments** (RAG + model + prompt), **Chat**, **Training** (fine-tuning jobs), **Audit**, and **API Keys**.  
+Register a user and use **Knowledge** (upload docs, RAG), **Models** (Ollama/OpenAI/vLLM), **Deployments** (RAG + model + prompt), and **Chat**.  
 **How to use (including file upload):** [docs/USAGE.md](docs/USAGE.md)
 
 ## Project layout
@@ -33,18 +33,8 @@ Register a user and use **Knowledge** (upload docs, RAG), **Models** (Ollama/Ope
 - `docker-compose.yml` — all services (project name: **goat**)
 - `docker-compose.gpu.yml` — optional GPU inference
 - `setup.sh` / `start.sh` / `stop.sh` — Docker lifecycle for this project only
-- `docs/` — [README](docs/README.md), [USAGE.md](docs/USAGE.md) (how to use & upload files), [OPERATOR.md](docs/OPERATOR.md)
+- `docs/` — [README](docs/README.md), [USAGE.md](docs/USAGE.md) (how to use & upload files), [OPERATOR.md](docs/OPERATOR.md), [PORTS.md](docs/PORTS.md) (port reference: main app vs exports)
 
-## Roles and login
+## Users and login
 
-You **log in the same way** (email + password) no matter your role. The app uses your account’s role to show or hide features.
-
-- **User** — chat, run deployments
-- **Builder** — knowledge bases, models, deployments, training
-- **Admin** — users, audit
-- **Auditor** — read-only audit logs
-- **Super Admin** — full access
-
-The **first user you register** is made **Super Admin**. To give another account Admin or Builder: use the API (`PATCH /api/v1/users/{user_id}` with `{"role": "admin"}` or `"builder"`) or set `role` in the `users` table in Adminer (http://localhost:8080). See [docs/USAGE.md](docs/USAGE.md) for details.
-
-All eight phases from the build plan are implemented.
+There is a single user type: **admin**. The **first user you register** is admin and has full access. Every user is an admin (one role). Log in with email and password. See [docs/USAGE.md](docs/USAGE.md) for details.

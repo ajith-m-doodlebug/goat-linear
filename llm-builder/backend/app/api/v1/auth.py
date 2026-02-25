@@ -13,7 +13,6 @@ from app.core.security import (
     decode_token,
 )
 from app.core.deps import get_current_user
-from app.core.audit import log_audit
 
 router = APIRouter()
 
@@ -37,14 +36,13 @@ def register(body: UserCreate, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.email == body.email).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
-    # First user becomes Super Admin; everyone else starts as USER
-    is_first = db.query(User).count() == 0
+    # Single role: admin. First user (and every user) is admin.
     user = User(
         id=str(uuid.uuid4()),
         email=body.email,
         hashed_password=get_password_hash(body.password),
         full_name=body.full_name,
-        role=Role.SUPER_ADMIN if is_first else Role.USER,
+        role=Role.ADMIN,
         is_active=True,
     )
     db.add(user)
@@ -63,7 +61,6 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
         )
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User inactive")
-    log_audit(user_id=user.id, action="auth.login", resource_type="user", resource_id=user.id)
     return Token(
         access_token=create_access_token(user.id),
         refresh_token=create_refresh_token(user.id),

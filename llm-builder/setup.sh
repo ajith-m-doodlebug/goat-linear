@@ -24,7 +24,10 @@ until docker compose -p "$PROJECT" exec -T postgres pg_isready -U llmbuilder -d 
   sleep 2
 done
 
-echo "[goat] Starting app once to run migrations..."
+echo "[goat] Resetting database (drop all tables and data)..."
+docker compose -p "$PROJECT" exec -T postgres psql -U llmbuilder -d llmbuilder -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+
+echo "[goat] Running migrations..."
 docker compose -p "$PROJECT" run --rm app alembic upgrade head
 
 echo "[goat] Starting all services..."

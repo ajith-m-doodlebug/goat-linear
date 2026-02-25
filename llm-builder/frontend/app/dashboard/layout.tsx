@@ -22,10 +22,8 @@ const navGroups = [
   {
     label: "More",
     items: [
+      { href: "/dashboard/prompts", label: "Prompts" },
       { href: "/dashboard/rag-configs", label: "Chunking & Embedding" },
-      { href: "/dashboard/training", label: "Training" },
-      { href: "/dashboard/audit", label: "Audit" },
-      { href: "/dashboard/api-keys", label: "API Keys" },
     ],
   },
 ];

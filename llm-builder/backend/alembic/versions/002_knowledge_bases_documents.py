@@ -30,8 +30,11 @@ def upgrade() -> None:
     )
     op.create_index("ix_knowledge_bases_qdrant_collection_name", "knowledge_bases", ["qdrant_collection_name"], unique=True)
 
-    doc_status_enum = sa.Enum("pending", "processing", "completed", "failed", name="documentstatus")
-    doc_status_enum.create(op.get_bind(), checkfirst=True)
+    op.execute(
+        "DO $$ BEGIN CREATE TYPE documentstatus AS ENUM ('pending', 'processing', 'completed', 'failed'); "
+        "EXCEPTION WHEN duplicate_object THEN NULL; END $$"
+    )
+    doc_status_enum = postgresql.ENUM("pending", "processing", "completed", "failed", name="documentstatus", create_type=False)
     op.create_table(
         "documents",
         sa.Column("id", sa.String(36), primary_key=True),

@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ProfileIcon, BellIcon, SettingsIcon } from "@/app/components/ui/icons";
+import { ProfileIcon, SettingsIcon } from "@/app/components/ui/icons";
 import type { UserResponse } from "@/lib/api";
 
 const THEME_KEY = "app-theme";
-const NOTIFICATIONS_KEY = "app-notifications";
 
 type Theme = "light" | "dark";
 
@@ -13,11 +12,6 @@ function getStoredTheme(): Theme {
   if (typeof window === "undefined") return "light";
   const v = localStorage.getItem(THEME_KEY);
   return v === "dark" ? "dark" : "light";
-}
-
-function getStoredNotifications(): boolean {
-  if (typeof window === "undefined") return false;
-  return localStorage.getItem(NOTIFICATIONS_KEY) === "true";
 }
 
 function applyTheme(theme: Theme) {
@@ -43,35 +37,29 @@ export function SettingsMenu({
   onLogout: () => void;
 }) {
   const [profileOpen, setProfileOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>("light");
-  const [notifications, setNotifications] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
-  const notificationsRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const t = getStoredTheme();
     setTheme(t);
     applyTheme(t);
-    setNotifications(getStoredNotifications());
   }, []);
 
   useEffect(() => {
-    const isOpen = profileOpen || notificationsOpen || settingsOpen;
+    const isOpen = profileOpen || settingsOpen;
     if (!isOpen) return;
     const close = (e: MouseEvent) => {
       const target = e.target as Node;
       if (
         profileRef.current?.contains(target) ||
-        notificationsRef.current?.contains(target) ||
         settingsRef.current?.contains(target)
       ) {
         return;
       }
       setProfileOpen(false);
-      setNotificationsOpen(false);
       setSettingsOpen(false);
     };
     const id = setTimeout(() => {
@@ -81,17 +69,12 @@ export function SettingsMenu({
       clearTimeout(id);
       document.removeEventListener("click", close, true);
     };
-  }, [profileOpen, notificationsOpen, settingsOpen]);
+  }, [profileOpen, settingsOpen]);
 
   const handleTheme = (next: Theme) => {
     setTheme(next);
     localStorage.setItem(THEME_KEY, next);
     applyTheme(next);
-  };
-
-  const handleNotifications = (enabled: boolean) => {
-    setNotifications(enabled);
-    localStorage.setItem(NOTIFICATIONS_KEY, enabled ? "true" : "false");
   };
 
   return (
@@ -103,7 +86,6 @@ export function SettingsMenu({
           onClick={(e) => {
             e.stopPropagation();
             setProfileOpen((o) => !o);
-            setNotificationsOpen(false);
             setSettingsOpen(false);
           }}
           className={iconButtonClass}
@@ -137,44 +119,6 @@ export function SettingsMenu({
         )}
       </div>
 
-      {/* Notifications */}
-      <div className="relative" ref={notificationsRef}>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setNotificationsOpen((o) => !o);
-            setProfileOpen(false);
-            setSettingsOpen(false);
-          }}
-          className={iconButtonClass}
-          title="Notifications"
-          aria-label="Notifications"
-        >
-          <BellIcon className="w-5 h-5" />
-        </button>
-        {notificationsOpen && (
-          <div className={`${dropdownClass} w-64 min-w-[16rem]`}>
-            <div className="px-4 py-3">
-              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                Notifications
-              </p>
-              <label className="mt-3 flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={notifications}
-                  onChange={(e) => handleNotifications(e.target.checked)}
-                  className="w-4 h-4 rounded border-[var(--border)] text-brand-600 focus:ring-brand-500"
-                />
-                <span className="text-sm text-slate-700 dark:text-slate-300">
-                  Enable notifications
-                </span>
-              </label>
-            </div>
-          </div>
-        )}
-      </div>
-
       {/* Settings (Theme, Logout) */}
       <div className="relative" ref={settingsRef}>
         <button
@@ -183,7 +127,6 @@ export function SettingsMenu({
             e.stopPropagation();
             setSettingsOpen((o) => !o);
             setProfileOpen(false);
-            setNotificationsOpen(false);
           }}
           className={iconButtonClass}
           title="Settings"

@@ -1,6 +1,6 @@
 # LLM Builder On-Premise
 
-Self-hosted AI infrastructure platform: RAG, fine-tuning, deployments, chat, model registry, audit.
+Self-hosted AI infrastructure platform: RAG, fine-tuning, deployments, chat, model registry.
 
 ## Running locally
 
@@ -8,9 +8,9 @@ Self-hosted AI infrastructure platform: RAG, fine-tuning, deployments, chat, mod
 2. Start infrastructure: `docker compose up -d postgres redis qdrant`
 3. Run migrations: `cd backend && alembic upgrade head`
 4. Start backend: `cd backend && uvicorn app.main:app --reload`
-5. Start worker (optional, for ingest/training): `cd backend && python -m app.workers.runner`
+5. Start worker (optional, for document ingest): `cd backend && python -m app.workers.runner`
 6. Start frontend: `cd frontend && npm install && npm run dev`
-7. Open http://localhost:3000 — register a user and use Knowledge, Models, Deployments, Chat, Training, Audit, API Keys.
+7. Open http://localhost:3000 — register a user and use Knowledge, Models, Deployments, Chat.
 
 ## Running with Docker Compose
 
@@ -23,4 +23,5 @@ From project root: `docker compose up --build`
 
 ## Operator guide
 
-See [OPERATOR.md](OPERATOR.md) for start/stop, backups, scaling, and env vars.
+See [OPERATOR.md](OPERATOR.md) for start/stop, backups, scaling, and env vars.  
+See [PORTS.md](PORTS.md) for the full port reference (main app vs exported deployments).

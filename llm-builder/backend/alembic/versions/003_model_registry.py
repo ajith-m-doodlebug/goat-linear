@@ -29,8 +29,6 @@ def upgrade() -> None:
         sa.Column("api_key_encrypted", sa.Text(), nullable=True),
         sa.Column("config", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("version", sa.String(64), nullable=True),
-        sa.Column("base_model_id", sa.String(36), nullable=True),
-        sa.Column("training_metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(), server_default=sa.func.now()),
     )

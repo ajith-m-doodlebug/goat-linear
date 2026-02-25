@@ -1,4 +1,4 @@
-"""RQ worker runner. Tasks will be added in Phase 2 (ingestion) and Phase 6 (fine-tuning)."""
+"""RQ worker runner. Runs ingestion and other background tasks."""
 import os
 import sys
 

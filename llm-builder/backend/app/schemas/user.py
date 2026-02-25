@@ -5,7 +5,7 @@ from pydantic import BaseModel, EmailStr
 class UserBase(BaseModel):
     email: EmailStr
     full_name: str | None = None
-    role: Role = Role.USER
+    role: Role = Role.ADMIN
     is_active: bool = True
 
 

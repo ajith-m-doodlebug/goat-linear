@@ -60,8 +60,7 @@ def update_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     if body.full_name is not None:
         user.full_name = body.full_name
-    if body.role is not None:
-        user.role = body.role
+    # Single role (admin): role is not updated
     if body.is_active is not None:
         user.is_active = body.is_active
     if body.password is not None:

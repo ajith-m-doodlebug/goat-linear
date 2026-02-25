@@ -48,6 +48,30 @@ export default function DeploymentsPage() {
     knowledge_base_id: "",
     prompt_template_id: "",
   });
+  const [exportingId, setExportingId] = useState<string | null>(null);
+
+  const exportDeployment = async (d: Deployment) => {
+    setExportingId(d.id);
+    try {
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+      const res = await fetch(`${API_BASE}/api/v1/deployments/${d.id}/export`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(d.name || "deployment").replace(/\s+/g, "-")}-export.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setExportingId(null);
+    }
+  };
 
   useTopBar(
     "Deployments",
@@ -324,6 +348,14 @@ export default function DeploymentsPage() {
                         }}
                       >
                         Test
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => exportDeployment(d)}
+                        disabled={exportingId === d.id}
+                        title="Export as ready-to-run API server (zip)"
+                      >
+                        {exportingId === d.id ? "Exporting…" : "Export"}
                       </Button>
                       <Button
                         variant="ghost"

@@ -5,12 +5,10 @@ from app.models.model_registry import ModelRegistry, ModelProvider, ModelType
 from app.models.prompt_template import PromptTemplate
 from app.models.deployment import Deployment
 from app.models.chat import ChatSession, ChatMessage
-from app.models.training import TrainingDataset, TrainingJob, TrainingJobStatus
-from app.models.audit import AuditLog, ApiKey
 from app.models.rag_config_preset import RagConfigPreset
 
 __all__ = [
     "User", "Role", "KnowledgeBase", "Document", "DocumentStatus",
     "ModelRegistry", "ModelProvider", "ModelType", "PromptTemplate", "Deployment",
-    "ChatSession", "ChatMessage", "TrainingDataset", "TrainingJob", "TrainingJobStatus", "AuditLog", "ApiKey", "RagConfigPreset",
+    "ChatSession", "ChatMessage", "RagConfigPreset",
 ]

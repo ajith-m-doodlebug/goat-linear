@@ -2,6 +2,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.db.base import get_db
@@ -10,9 +11,9 @@ from app.models.deployment import Deployment
 from app.models.prompt_template import PromptTemplate
 from app.schemas.deployment import DeploymentCreate, DeploymentUpdate, DeploymentResponse
 from app.schemas.prompt_template import PromptTemplateCreate, PromptTemplateUpdate, PromptTemplateResponse
-from app.core.deps import get_current_user, require_builder
+from app.core.deps import get_current_user, require_admin
 from app.services.rag import run_rag
-from app.core.audit import log_audit
+from app.services.export_deployment import build_export_bundle
 
 router = APIRouter()
 
@@ -43,13 +44,13 @@ def _template_to_response(t: PromptTemplate) -> PromptTemplateResponse:
 
 # ---- Prompt templates ----
 @router.get("/prompt-templates", response_model=list[PromptTemplateResponse])
-def list_prompt_templates(db: Session = Depends(get_db), _: User = Depends(require_builder)):
+def list_prompt_templates(db: Session = Depends(get_db), _: User = Depends(require_admin)):
     templates = db.query(PromptTemplate).all()
     return [_template_to_response(t) for t in templates]
 
 
 @router.post("/prompt-templates", response_model=PromptTemplateResponse)
-def create_prompt_template(body: PromptTemplateCreate, db: Session = Depends(get_db), _: User = Depends(require_builder)):
+def create_prompt_template(body: PromptTemplateCreate, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     t = PromptTemplate(
         id=str(uuid.uuid4()),
         name=body.name,
@@ -64,7 +65,7 @@ def create_prompt_template(body: PromptTemplateCreate, db: Session = Depends(get
 
 @router.patch("/prompt-templates/{template_id}", response_model=PromptTemplateResponse)
 def update_prompt_template(
-    template_id: str, body: PromptTemplateUpdate, db: Session = Depends(get_db), _: User = Depends(require_builder)
+    template_id: str, body: PromptTemplateUpdate, db: Session = Depends(get_db), _: User = Depends(require_admin)
 ):
     t = db.query(PromptTemplate).filter(PromptTemplate.id == template_id).first()
     if not t:
@@ -80,15 +81,27 @@ def update_prompt_template(
     return _template_to_response(t)
 
 
+@router.delete("/prompt-templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_prompt_template(
+    template_id: str, db: Session = Depends(get_db), _: User = Depends(require_admin)
+):
+    t = db.query(PromptTemplate).filter(PromptTemplate.id == template_id).first()
+    if not t:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prompt template not found")
+    db.delete(t)
+    db.commit()
+    return None
+
+
 # ---- Deployments ----
 @router.get("", response_model=list[DeploymentResponse])
-def list_deployments(db: Session = Depends(get_db), _: User = Depends(require_builder)):
+def list_deployments(db: Session = Depends(get_db), _: User = Depends(require_admin)):
     deployments = db.query(Deployment).all()
     return [_deployment_to_response(d) for d in deployments]
 
 
 @router.post("", response_model=DeploymentResponse)
-def create_deployment(body: DeploymentCreate, db: Session = Depends(get_db), _: User = Depends(require_builder)):
+def create_deployment(body: DeploymentCreate, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     d = Deployment(
         id=str(uuid.uuid4()),
         name=body.name,
@@ -106,7 +119,7 @@ def create_deployment(body: DeploymentCreate, db: Session = Depends(get_db), _: 
 
 
 @router.get("/{deployment_id}", response_model=DeploymentResponse)
-def get_deployment(deployment_id: str, db: Session = Depends(get_db), _: User = Depends(require_builder)):
+def get_deployment(deployment_id: str, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     d = db.query(Deployment).filter(Deployment.id == deployment_id).first()
     if not d:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deployment not found")
@@ -115,7 +128,7 @@ def get_deployment(deployment_id: str, db: Session = Depends(get_db), _: User = 
 
 @router.patch("/{deployment_id}", response_model=DeploymentResponse)
 def update_deployment(
-    deployment_id: str, body: DeploymentUpdate, db: Session = Depends(get_db), _: User = Depends(require_builder)
+    deployment_id: str, body: DeploymentUpdate, db: Session = Depends(get_db), _: User = Depends(require_admin)
 ):
     d = db.query(Deployment).filter(Deployment.id == deployment_id).first()
     if not d:
@@ -140,13 +153,34 @@ def update_deployment(
 
 
 @router.delete("/{deployment_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_deployment(deployment_id: str, db: Session = Depends(get_db), _: User = Depends(require_builder)):
+def delete_deployment(deployment_id: str, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     d = db.query(Deployment).filter(Deployment.id == deployment_id).first()
     if not d:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deployment not found")
     db.delete(d)
     db.commit()
     return None
+
+
+@router.get("/{deployment_id}/export")
+def export_deployment(
+    deployment_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Export deployment as a zip: config, vector snapshot, and ready-to-run OpenAI-compatible server."""
+    try:
+        zip_bytes = build_export_bundle(db, deployment_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    d = db.query(Deployment).filter(Deployment.id == deployment_id).first()
+    name = (d.name if d else "deployment").replace(" ", "-")
+    filename = f"{name}-export.zip"
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/{deployment_id}/run")
@@ -162,7 +196,6 @@ def run_deployment(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question required")
     try:
         response_text, citations = run_rag(deployment_id, question)
-        log_audit(user_id=user.id, action="deployment.run", resource_type="deployment", resource_id=deployment_id, details={"question_length": len(question)})
         return {"response": response_text, "citations": citations}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

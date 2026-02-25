@@ -55,10 +55,8 @@ const pathnameToTitle: Record<string, string> = {
   "/dashboard/models": "Models",
   "/dashboard/deployments": "Deployments",
   "/dashboard/chat": "Chat",
+  "/dashboard/prompts": "Prompts",
   "/dashboard/rag-configs": "Chunking & Embedding",
-  "/dashboard/training": "Training",
-  "/dashboard/audit": "Audit",
-  "/dashboard/api-keys": "API Keys",
 };
 
 export function getTitleFromPathname(pathname: string): string {

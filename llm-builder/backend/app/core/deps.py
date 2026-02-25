@@ -7,8 +7,6 @@ from sqlalchemy.orm import Session
 from app.db.base import get_db
 from app.models.user import User, Role
 from app.core.security import decode_token
-from app.core.api_key_auth import API_KEY_HEADER, get_user_from_api_key
-
 security = HTTPBearer(auto_error=False)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
@@ -20,9 +18,7 @@ def get_user_by_id(db: Session, user_id: str) -> User | None:
 def get_current_user(
     db: Annotated[Session, Depends(get_db)],
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
-    api_key: Annotated[str | None, Depends(API_KEY_HEADER)],
 ) -> User:
-    # 1) Try Bearer token
     if credentials:
         payload = decode_token(credentials.credentials)
         if payload and payload.get("type") == "access":
@@ -39,15 +35,6 @@ def get_current_user(
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    # 2) Try API key (X-API-Key header)
-    if api_key and api_key.strip():
-        user = get_user_from_api_key(db, api_key.strip())
-        if user:
-            return user
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or unknown API key",
-        )
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Not authenticated",
@@ -55,31 +42,8 @@ def get_current_user(
     )
 
 
-def require_super_admin(user: Annotated[User, Depends(get_current_user)]) -> User:
-    if user.role != Role.SUPER_ADMIN:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-    return user
-
-
 def require_admin(user: Annotated[User, Depends(get_current_user)]) -> User:
-    if user.role not in (Role.SUPER_ADMIN, Role.ADMIN):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-    return user
-
-
-def require_builder(user: Annotated[User, Depends(get_current_user)]) -> User:
-    if user.role not in (Role.SUPER_ADMIN, Role.ADMIN, Role.BUILDER):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-    return user
-
-
-def require_user(user: Annotated[User, Depends(get_current_user)]) -> User:
-    if user.role not in (Role.SUPER_ADMIN, Role.ADMIN, Role.BUILDER, Role.USER):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-    return user
-
-
-def require_auditor(user: Annotated[User, Depends(get_current_user)]) -> User:
-    if user.role not in (Role.SUPER_ADMIN, Role.ADMIN, Role.AUDITOR):
+    """Only one role: admin. Any authenticated user is admin."""
+    if user.role != Role.ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
     return user

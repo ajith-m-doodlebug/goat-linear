@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useTopBar } from "@/app/dashboard/TopBarContext";
 import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Card, CardBody } from "@/app/components/ui/Card";
-import { Button } from "@/app/components/ui/Button";
 
 const steps = [
   {
@@ -68,20 +67,6 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <div className="mt-8 pt-6 border-t border-[var(--border)]">
-        <p className="text-sm text-slate-500 mb-2">Also available</p>
-        <div className="flex flex-wrap gap-2">
-          <Link href="/dashboard/training">
-            <Button variant="ghost">Training</Button>
-          </Link>
-          <Link href="/dashboard/audit">
-            <Button variant="ghost">Audit</Button>
-          </Link>
-          <Link href="/dashboard/api-keys">
-            <Button variant="ghost">API Keys</Button>
-          </Link>
-        </div>
-      </div>
     </div>
   );
 }

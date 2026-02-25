@@ -7,7 +7,6 @@ from app.core.config import get_settings
 from app.core.logging_config import setup_logging
 from app.api.v1 import api_router
 from app.db.base import engine, Base
-from app.core.audit import audit_middleware
 
 settings = get_settings()
 setup_logging(use_json=not settings.debug, level="DEBUG" if settings.debug else "INFO")
@@ -27,7 +26,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.middleware("http")(audit_middleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],

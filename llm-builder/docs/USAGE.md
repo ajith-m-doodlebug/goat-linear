@@ -18,19 +18,13 @@ From the project root:
 
 1. Open http://localhost:3000  
 2. Click **Register** and create an account.  
-3. **First user** registered is automatically **Super Admin**. All later sign-ups get the **User** role.  
-4. You always log in the same way: **Login** with your email and password. Your role (Admin, Builder, etc.) is already set on your account; the app shows or hides menu items based on it.
+3. The **first user** you register is **admin** and has full access. There is a single user type (admin); every registered user is an admin.  
+4. Log in with your email and password to use Knowledge, Models, Deployments, and Chat.
 
-### How to get Admin or Builder
-
-- **Super Admin / Admin** can change roles. They use the API to promote users:  
-  `PATCH /api/v1/users/{user_id}` with body `{ "role": "admin" }` or `{ "role": "builder" }` (requires Admin or Super Admin token).  
-- Or set the role in the database (e.g. via Adminer at http://localhost:8080): table `users`, column `role` — values: `user`, `builder`, `admin`, `auditor`, `super_admin`).  
-- If you need a second Admin/Builder and have no UI yet: log in as the first user (Super Admin), then either call the API (see http://localhost:8000/docs) or use Adminer to set another user’s `role` to `admin` or `builder`.
 
 ## 3. Upload files into a knowledge base (RAG)
 
-Only users with the **Builder** role can create knowledge bases and upload files.
+Any logged-in user (admin) can create knowledge bases and upload files.
 
 ### Create a knowledge base
 
@@ -50,7 +44,7 @@ Uploaded files are processed in the background (text extraction → chunking →
 
 ## 4. Models screen (how to use it)
 
-The **Models** page lets you register LLM endpoints so you can use them in **Deployments** and **Chat**. You need the **Builder** role.
+The **Models** page lets you register LLM endpoints so you can use them in **Deployments** and **Chat**.
 
 ### What you see
 
@@ -140,66 +134,6 @@ When you send a message in a chat that’s tied to a deployment, the following r
    Your message and the assistant’s reply are stored in the database. The API returns the **response text** and **citations** to the frontend, which shows the answer (and any citations).
 
 **In short:** Your question → (optional) retrieval from the knowledge base → prompt with context + question + history → one LLM call → answer and citations saved and shown.
-
-## 7. Other features
-
-- **Training:** Upload JSONL/JSON datasets and run fine-tuning jobs (Builder).  
-- **Audit:** View audit logs (Admin/Auditor).  
-- **API Keys:** Create API keys for programmatic access (Builder/Admin).
-
-## Using an API key
-
-Create keys under **API Keys** in the dashboard (Builder/Admin). The full key is shown only once at creation; store it securely.
-
-Use the key by sending it in the **X-API-Key** header on every request. No Bearer token is needed when using the key.
-
-**Example (curl):**
-
-```bash
-curl -s -H "X-API-Key: llmb_YOUR_KEY_HERE" http://localhost:8000/api/v1/auth/me
-```
-
-**Example (list models):**
-
-```bash
-curl -s -H "X-API-Key: llmb_YOUR_KEY_HERE" http://localhost:8000/api/v1/models
-```
-
-Your API key has the same permissions as your user (Builder, Admin, etc.). Use it for scripts, CI, or external apps instead of logging in to get a JWT.
-
-## How training (fine-tuning) works
-
-Training lets you run **fine-tuning jobs** from a dataset and a **base model** (e.g. Llama, Mistral). You need the **Builder** role.
-
-### 1. Upload a dataset
-
-- Go to **Training** in the sidebar.
-- Under **Upload dataset (JSONL)**, choose a **JSONL** or **JSON** file and optionally a name, then click **Upload**.
-- The file is stored under the app’s upload directory; the API records the dataset (id, name, format, row count).  
-- **Dataset format:** One JSON object per line (JSONL). Typical structure for instruction fine-tuning: `{"instruction": "...", "input": "...", "output": "..."}` or `{"messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}`. The app does not validate the schema; it only stores the file and counts lines.
-
-### 2. Create a training job
-
-- Click **New training job**.
-- Select a **dataset** (one you uploaded) and a **base model** (one from **Models**).
-- Click **Start job**.
-- The API creates a **training job** (status `queued`), enqueues a background task for the **worker**, and returns the job id.
-
-### 3. What runs in the background (worker)
-
-- The **worker** (same RQ process that runs ingest) picks up the job.
-- It loads the job, base model, and dataset from the DB; it does **not** read the dataset file content in the current implementation.
-- **Current behavior (stub):** The worker does **not** run real fine-tuning (no PEFT/LoRA, no GPU training). It:
-  - Sets the job status to `running`, then `completed`.
-  - Creates a new **model registry** entry of type **fine_tuned**, linked to the base model (same provider, endpoint, model_id; name like `{base.name}-finetuned-{job_id}`).
-  - Sets the job’s **result_model_id** to that new model and stores placeholder metrics (e.g. `loss: 0.5, steps: 100`).
-- So in the UI you see a completed job and a new “fine-tuned” model; that model currently points at the **same** backend as the base (no real training has been run). Real fine-tuning would require integrating a training stack (e.g. Hugging Face Transformers + PEFT/LoRA, or an external training API) and storing/serving the adapter or new weights.
-
-### 4. Jobs and result model
-
-- **Training jobs** are listed in the table (ID, status, result model, created).
-- Status flows: `queued` → `running` → `completed` or `failed` (with `error_message` if failed).
-- On **completed**, **Result model** shows the new model’s id; that model appears under **Models** and can be used in **Deployments** and **Chat** like any other model (today it behaves like the base model because no real training runs).
 
 ## Safe file uploads
 

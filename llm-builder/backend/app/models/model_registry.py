@@ -30,7 +30,5 @@ class ModelRegistry(Base):
     api_key_encrypted = Column(Text, nullable=True)  # optional; for openai/custom
     config = Column(JSONB, nullable=True)  # extra params (temperature, max_tokens, etc.)
     version = Column(String(64), nullable=True)
-    base_model_id = Column(String(36), nullable=True)  # for fine-tuned: link to base
-    training_metadata = Column(JSONB, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

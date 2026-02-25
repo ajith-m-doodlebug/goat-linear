@@ -17,6 +17,18 @@ KEYWORD_TOP_K_MAX = 30
 # Require at least this many question keywords in a chunk (1 = include all keyword matches; ranking still prefers more).
 MIN_KEYWORDS_REQUIRED = 1
 
+# Default prompt when no custom prompt template is set on the deployment. Uses {context} and {question}; memory is prepended.
+DEFAULT_RAG_PROMPT = (
+    "Answer the question using only the context below. "
+    "Do not use external knowledge. Use information, numbers, and names exactly as they appear in the context. "
+    "Do not invent or assume meanings for abbreviations or acronyms; use only what the context states. "
+    "If the context contains a section that directly defines or lists what is asked, base your answer on that section. "
+    "If the answer is not in the context, say so briefly.\n\n"
+    "Context:\n{context}\n\n"
+    "Question: {question}\n\n"
+    "Answer:"
+)
+
 
 def _count_keyword_matches(text: str, keywords: set[str]) -> int:
     """Number of distinct question keywords that appear in the chunk."""
@@ -238,23 +250,15 @@ def run_rag(
             ) + "\n\n"
 
         if prompt_template:
+            # Custom prompt: use the deployment's prompt template
             prompt = prompt_template.content.replace("{context}", context).replace("{question}", question)
             if "{memory}" in prompt_template.content:
                 prompt = prompt.replace("{memory}", memory_block)
             else:
                 prompt = memory_block + prompt
         else:
-            # Generic RAG instruction: answer only from context
-            prompt = memory_block + (
-                "Answer the question using only the context below. "
-                "Do not use external knowledge. Use information, numbers, and names exactly as they appear in the context. "
-                "Do not invent or assume meanings for abbreviations or acronyms; use only what the context states. "
-                "If the context contains a section that directly defines or lists what is asked, base your answer on that section. "
-                "If the answer is not in the context, say so briefly.\n\n"
-                "Context:\n{context}\n\n"
-                "Question: {question}\n\n"
-                "Answer:"
-            ).format(context=context, question=question)
+            # Default prompt when no custom template is set
+            prompt = memory_block + DEFAULT_RAG_PROMPT.format(context=context, question=question)
 
         try:
             response_text = complete(model, prompt, **(dep.config or {}))

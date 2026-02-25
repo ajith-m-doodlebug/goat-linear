@@ -20,11 +20,11 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     # Create enum only if it doesn't exist (idempotent; e.g. after DB clone from template)
     op.execute(
-        "DO $$ BEGIN CREATE TYPE role AS ENUM ('super_admin', 'admin', 'builder', 'user', 'auditor'); "
+        "DO $$ BEGIN CREATE TYPE role AS ENUM ('admin'); "
         "EXCEPTION WHEN duplicate_object THEN NULL; END $$"
     )
     # Use dialect ENUM with create_type=False so create_table does not try to create it again
-    role_enum = postgresql.ENUM("super_admin", "admin", "builder", "user", "auditor", name="role", create_type=False)
+    role_enum = postgresql.ENUM("admin", name="role", create_type=False)
     op.create_table(
         "users",
         sa.Column("id", sa.String(36), primary_key=True),

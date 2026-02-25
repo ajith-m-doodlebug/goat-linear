@@ -13,7 +13,7 @@ from app.models.knowledge_base import KnowledgeBase
 from app.models.document import Document, DocumentStatus
 from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseUpdate, KnowledgeBaseResponse
 from app.schemas.document import DocumentResponse, DocumentUpdate
-from app.core.deps import get_current_user, require_builder
+from app.core.deps import get_current_user, require_admin
 from app.core.config import get_settings
 from app.core.queue import get_queue
 from app.workers.ingest import run_ingest
@@ -81,7 +81,7 @@ def _resolve_config_from_preset(preset_id: str | None, config: dict | None, user
 @router.get("", response_model=list[KnowledgeBaseResponse])
 def list_knowledge_bases(
     db: Session = Depends(get_db),
-    _: User = Depends(require_builder),
+    _: User = Depends(require_admin),
 ):
     bases = db.query(KnowledgeBase).all()
     return [_kb_to_response(kb) for kb in bases]
@@ -91,7 +91,7 @@ def list_knowledge_bases(
 def create_knowledge_base(
     body: KnowledgeBaseCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_builder),
+    user: User = Depends(require_admin),
 ):
     resolved = _resolve_config_from_preset(body.preset_id, body.config, str(user.id), db)
     collection_name = f"kb_{uuid.uuid4().hex[:16]}"
@@ -112,7 +112,7 @@ def create_knowledge_base(
 def get_knowledge_base(
     kb_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_builder),
+    _: User = Depends(require_admin),
 ):
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
     if not kb:
@@ -125,7 +125,7 @@ def update_knowledge_base(
     kb_id: str,
     body: KnowledgeBaseUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_builder),
+    user: User = Depends(require_admin),
 ):
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
     if not kb:
@@ -147,7 +147,7 @@ def update_knowledge_base(
 def delete_knowledge_base(
     kb_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_builder),
+    _: User = Depends(require_admin),
 ):
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
     if not kb:
@@ -161,7 +161,7 @@ def delete_knowledge_base(
 def list_documents(
     kb_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_builder),
+    _: User = Depends(require_admin),
 ):
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
     if not kb:
@@ -177,7 +177,7 @@ async def upload_document(
     config: str | None = Form(None),
     preset_id: str | None = Form(None),
     db: Session = Depends(get_db),
-    user: User = Depends(require_builder),
+    user: User = Depends(require_admin),
 ):
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
     if not kb:
@@ -281,7 +281,7 @@ def update_document(
     document_id: str,
     body: DocumentUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_builder),
+    user: User = Depends(require_admin),
 ):
     doc = db.query(Document).filter(Document.id == document_id, Document.knowledge_base_id == kb_id).first()
     if not doc:
@@ -302,7 +302,7 @@ def delete_document(
     kb_id: str,
     document_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_builder),
+    _: User = Depends(require_admin),
 ):
     doc = db.query(Document).filter(Document.id == document_id, Document.knowledge_base_id == kb_id).first()
     if not doc:
@@ -317,7 +317,7 @@ def trigger_ingest(
     kb_id: str,
     document_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_builder),
+    _: User = Depends(require_admin),
 ):
     doc = db.query(Document).filter(Document.id == document_id, Document.knowledge_base_id == kb_id).first()
     if not doc:

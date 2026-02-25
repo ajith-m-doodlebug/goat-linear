@@ -8,7 +8,7 @@ from app.db.base import get_db
 from app.models.user import User
 from app.models.model_registry import ModelRegistry
 from app.schemas.model_registry import ModelRegistryCreate, ModelRegistryUpdate, ModelRegistryResponse
-from app.core.deps import get_current_user, require_builder
+from app.core.deps import get_current_user, require_admin
 from app.services.llm_client import complete, health_check
 
 router = APIRouter()
@@ -25,8 +25,6 @@ def _model_to_response(m: ModelRegistry) -> ModelRegistryResponse:
         api_key_encrypted=m.api_key_encrypted,
         config=m.config,
         version=m.version,
-        base_model_id=m.base_model_id,
-        training_metadata=m.training_metadata,
         created_at=m.created_at.isoformat() if m.created_at else "",
     )
 
@@ -34,7 +32,7 @@ def _model_to_response(m: ModelRegistry) -> ModelRegistryResponse:
 @router.get("", response_model=list[ModelRegistryResponse])
 def list_models(
     db: Session = Depends(get_db),
-    _: User = Depends(require_builder),
+    _: User = Depends(require_admin),
 ):
     models = db.query(ModelRegistry).all()
     return [_model_to_response(m) for m in models]
@@ -44,7 +42,7 @@ def list_models(
 def create_model(
     body: ModelRegistryCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_builder),
+    _: User = Depends(require_admin),
 ):
     model = ModelRegistry(
         id=str(uuid.uuid4()),
@@ -56,7 +54,6 @@ def create_model(
         api_key_encrypted=body.api_key_encrypted,
         config=body.config,
         version=body.version,
-        base_model_id=body.base_model_id,
     )
     db.add(model)
     db.commit()
@@ -68,7 +65,7 @@ def create_model(
 def get_model(
   model_id: str,
   db: Session = Depends(get_db),
-  _: User = Depends(require_builder),
+  _: User = Depends(require_admin),
 ):
     model = db.query(ModelRegistry).filter(ModelRegistry.id == model_id).first()
     if not model:
@@ -81,7 +78,7 @@ def update_model(
   model_id: str,
   body: ModelRegistryUpdate,
   db: Session = Depends(get_db),
-  _: User = Depends(require_builder),
+  _: User = Depends(require_admin),
 ):
     model = db.query(ModelRegistry).filter(ModelRegistry.id == model_id).first()
     if not model:
@@ -107,7 +104,7 @@ def update_model(
 def delete_model(
   model_id: str,
   db: Session = Depends(get_db),
-  _: User = Depends(require_builder),
+  _: User = Depends(require_admin),
 ):
     model = db.query(ModelRegistry).filter(ModelRegistry.id == model_id).first()
     if not model:
@@ -122,7 +119,7 @@ def test_model(
   model_id: str,
   body: dict,
   db: Session = Depends(get_db),
-  _: User = Depends(require_builder),
+  _: User = Depends(require_admin),
 ):
     """Send a test prompt and return the model response. Body: { \"prompt\": \"...\" }"""
     model = db.query(ModelRegistry).filter(ModelRegistry.id == model_id).first()
@@ -142,7 +139,7 @@ def test_model(
 def model_health(
   model_id: str,
   db: Session = Depends(get_db),
-  _: User = Depends(require_builder),
+  _: User = Depends(require_admin),
 ):
     model = db.query(ModelRegistry).filter(ModelRegistry.id == model_id).first()
     if not model:
