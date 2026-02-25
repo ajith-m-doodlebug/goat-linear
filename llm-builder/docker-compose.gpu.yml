@@ -1,0 +1,36 @@
+# Optional: extend main compose with GPU-backed inference (vLLM, Ollama).
+# Run: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# Requires: NVIDIA Container Toolkit (nvidia-docker2)
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # vLLM: uncomment and set MODEL_ID to serve a Hugging Face model
+  # vllm:
+  #   image: vllm/vllm-openai:latest
+  #   environment:
+  #     MODEL_ID: meta-llama/Llama-2-7b-chat-hf
+  #   ports:
+  #     - "8001:8000"
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+
+volumes:
+  ollama_data:

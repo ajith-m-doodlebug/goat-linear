@@ -1,0 +1,42 @@
+# Dev override: mount source and enable reload. Use with:
+#   docker compose -p goat -f docker-compose.yml -f docker-compose.dev.yml up -d
+# Or: ./dev.sh
+
+name: goat
+
+services:
+  app:
+    volumes:
+      - ./backend:/app
+      - uploads_data:/tmp/uploads
+    environment:
+      UPLOAD_DIR: /tmp/uploads
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: "no"
+
+  worker:
+    volumes:
+      - ./backend:/app
+      - uploads_data:/tmp/uploads
+    environment:
+      UPLOAD_DIR: /tmp/uploads
+    restart: "no"
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    volumes:
+      - ./frontend:/app
+      - web_node_modules:/app/node_modules
+    command: ["sh", "-c", "([ -f node_modules/.bin/next ]) || npm install; exec npm run dev"]
+    restart: "no"
+    environment:
+      HOSTNAME: "0.0.0.0"
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      WATCHPACK_POLLING: "true"
+
+volumes:
+  web_node_modules:
+  uploads_data:
