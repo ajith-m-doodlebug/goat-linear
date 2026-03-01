@@ -263,8 +263,13 @@ def run_rag(
         try:
             response_text = complete(model, prompt, **(dep.config or {}))
         except Exception as e:
-            response_text = "Error generating response: " + str(e)
-            # Keep existing citations so the user can see what context was retrieved
+            err_msg = str(e)
+            response_text = "Error generating response: " + err_msg
+            if "101" in err_msg or "unreachable" in err_msg.lower() or "refused" in err_msg.lower() or "Connection" in err_msg:
+                response_text += " If the API runs in Docker and the model (e.g. Ollama) is on your host, set the model's Endpoint URL to http://host.docker.internal:11434 (Mac/Windows) or add OLLAMA_DEFAULT_URL=http://host.docker.internal:11434 to the app environment."
+            if "429" in err_msg or "Too Many Requests" in err_msg:
+                response_text += " Rate limit exceeded; wait a moment or reduce request frequency. Retrieved context is still shown below."
+            # Always return citations so the user can see the chunked context even when the model call failed
         return response_text, citations
     finally:
         db.close()

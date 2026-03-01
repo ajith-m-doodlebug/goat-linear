@@ -13,11 +13,15 @@ export function Card({
   variant = "default",
   href,
 }: CardProps) {
-  const base = "rounded-2xl p-6 transition-shadow hover:shadow-lg";
+  const base =
+    "rounded-3xl p-8 transition-all duration-300 shadow-card hover:shadow-card-hover hover:-translate-y-1";
   const variants = {
-    default: "bg-white border border-gray-100",
-    blue: "bg-primary-dark text-white",
-    wave: "bg-white bg-[linear-gradient(135deg,rgba(224,242,254,0.5)_0%,rgba(255,255,255,1)_70%)]",
+    default:
+      "bg-white/90 backdrop-blur border border-white/60",
+    blue:
+      "bg-gradient-to-br from-primary-dark via-primary to-primary-light text-white border border-white/20 shadow-glow",
+    wave:
+      "bg-gradient-to-br from-white via-white to-accent-light/40 border border-white/80 backdrop-blur",
   };
   const cls = `${base} ${variants[variant]} ${className}`;
 

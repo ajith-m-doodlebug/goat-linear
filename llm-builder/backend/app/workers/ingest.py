@@ -39,23 +39,21 @@ def run_ingest(document_id: str) -> None:
             db.commit()
             return
 
-        # Resolve full path for file uploads
+        text = ""
         if doc.source_type == "file" and doc.storage_path:
             base = get_settings().upload_dir
             full_path = os.path.join(base, doc.storage_path)
+            if not os.path.isfile(full_path):
+                doc.status = DocumentStatus.FAILED
+                doc.error_message = f"File not found: {full_path}"
+                db.commit()
+                return
+            text = extract_text_from_file(full_path)
         else:
             doc.status = DocumentStatus.FAILED
             doc.error_message = "Unsupported source type or missing path"
             db.commit()
             return
-
-        if not os.path.isfile(full_path):
-            doc.status = DocumentStatus.FAILED
-            doc.error_message = f"File not found: {full_path}"
-            db.commit()
-            return
-
-        text = extract_text_from_file(full_path)
         if not text.strip():
             doc.status = DocumentStatus.COMPLETED
             doc.error_message = None

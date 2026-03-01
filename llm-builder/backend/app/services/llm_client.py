@@ -1,12 +1,15 @@
 """Unified LLM client: Ollama, vLLM (OpenAI-compatible), OpenAI, custom REST."""
 import httpx
+from app.core.config import get_settings
 from app.models.model_registry import ModelRegistry
 
-OLLAMA_DEFAULT_URL = "http://localhost:11434"
+
+def _ollama_default_url() -> str:
+    return get_settings().ollama_default_url
 
 
 def _ollama_complete(model_id: str, prompt: str, base_url: str, **kwargs) -> str:
-    url = (base_url or OLLAMA_DEFAULT_URL).rstrip("/") + "/api/generate"
+    url = (base_url or _ollama_default_url()).rstrip("/") + "/api/generate"
     with httpx.Client(timeout=120.0) as client:
         r = client.post(
             url,
@@ -48,7 +51,7 @@ def complete(model: ModelRegistry, prompt: str, **extra_config) -> str:
     config.update(extra_config)
 
     if model.provider == "ollama":
-        return _ollama_complete(model_id, prompt, base_url or OLLAMA_DEFAULT_URL, **config)
+        return _ollama_complete(model_id, prompt, base_url or _ollama_default_url(), **config)
     if model.provider in ("vllm", "openai", "custom"):
         return _openai_complete(model_id, prompt, base_url, api_key, **config)
     raise ValueError(f"Unsupported provider: {model.provider}")
@@ -57,7 +60,7 @@ def complete(model: ModelRegistry, prompt: str, **extra_config) -> str:
 def health_check(model: ModelRegistry) -> bool:
     """Check if the model endpoint is reachable."""
     if model.provider == "ollama":
-        url = (model.endpoint_url or OLLAMA_DEFAULT_URL).rstrip("/") + "/api/tags"
+        url = (model.endpoint_url or _ollama_default_url()).rstrip("/") + "/api/tags"
         try:
             with httpx.Client(timeout=5.0) as client:
                 r = client.get(url)

@@ -55,6 +55,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       QDRANT_URL: http://qdrant:6333
       UPLOAD_DIR: /tmp/uploads
+      # Ollama on host: use host.docker.internal (Mac/Windows). On Linux set model endpoint URL to host IP or use docker-compose.gpu.yml.
+      OLLAMA_DEFAULT_URL: http://host.docker.internal:11434
     volumes:
       - uploads_data:/tmp/uploads
     depends_on:
@@ -89,6 +91,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       QDRANT_URL: http://qdrant:6333
       UPLOAD_DIR: /tmp/uploads
+      OLLAMA_DEFAULT_URL: http://host.docker.internal:11434
     volumes:
       - uploads_data:/tmp/uploads
     depends_on:

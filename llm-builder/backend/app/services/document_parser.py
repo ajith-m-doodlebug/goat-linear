@@ -175,6 +175,18 @@ def chunk_text(
     return _chunk_fixed(text, size, ov)
 
 
+def extract_text_from_html(html_content: str) -> str:
+    """Extract plain text from HTML string. Used by file parser."""
+    if not html_content or not html_content.strip():
+        return ""
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html_content, "html.parser")
+        return soup.get_text(separator="\n", strip=True)
+    except Exception:
+        return html_content
+
+
 def extract_text_from_file(file_path: str) -> str:
     """Extract raw text from file based on extension."""
     path = Path(file_path)
@@ -196,10 +208,5 @@ def extract_text_from_file(file_path: str) -> str:
         except Exception:
             return ""
     if suffix in (".html", ".htm"):
-        try:
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(path.read_text(encoding="utf-8", errors="replace"), "html.parser")
-            return soup.get_text(separator="\n", strip=True)
-        except Exception:
-            return path.read_text(encoding="utf-8", errors="replace")
+        return extract_text_from_html(path.read_text(encoding="utf-8", errors="replace"))
     return path.read_text(encoding="utf-8", errors="replace")

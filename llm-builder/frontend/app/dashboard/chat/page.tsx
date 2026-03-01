@@ -315,9 +315,14 @@ export default function ChatPage() {
                     >
                       <div className="whitespace-pre-wrap text-sm">{m.content}</div>
                       {m.citations && m.citations.length > 0 && (
-                        <details className={`mt-2 text-xs ${m.role === "user" ? "text-brand-100" : "text-slate-600"}`}>
+                        <details
+                          className={`mt-2 text-xs ${m.role === "user" ? "text-brand-100" : "text-slate-600"}`}
+                          open={m.role === "assistant" && m.content.startsWith("Error generating response")}
+                        >
                           <summary className="cursor-pointer hover:underline">
-                            Data from document ({m.citations.length} chunk{m.citations.length !== 1 ? "s" : ""})
+                            {m.role === "assistant" && m.content.startsWith("Error generating response")
+                              ? `Retrieved context (${m.citations.length} chunk${m.citations.length !== 1 ? "s" : ""}) — model error above`
+                              : `Data from document (${m.citations.length} chunk${m.citations.length !== 1 ? "s" : ""})`}
                           </summary>
                           <ul className="mt-2 pl-4 space-y-2 list-none">
                             {m.citations.map((c: Citation, i: number) => (

@@ -17,7 +17,7 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "LLM Builder | Self-hosted AI infrastructure",
+  title: "RAGline | Self-hosted AI infrastructure",
   description: "Your AI partner for self-hosted RAG, deployments, and chat.",
 };
 

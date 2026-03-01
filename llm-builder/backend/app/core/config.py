@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     # Uploads: app and worker must share this path (e.g. same Docker volume). Set UPLOAD_DIR in env.
     upload_dir: str = "/tmp/uploads"
 
+    # When a model has no endpoint_url (e.g. Ollama), use this. In Docker with Ollama on host, set to
+    # http://host.docker.internal:11434 (Mac/Windows) or http://ollama:11434 if Ollama is in the same compose.
+    ollama_default_url: str = "http://localhost:11434"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

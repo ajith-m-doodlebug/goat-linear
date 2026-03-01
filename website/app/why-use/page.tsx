@@ -1,6 +1,6 @@
 export const metadata = {
-  title: "Why use | LLM Builder",
-  description: "Why choose LLM Builder: self-hosted, privacy, RAG, model registry, deployments, and chat.",
+  title: "Why use | RAGline",
+  description: "Why choose RAGline: self-hosted, privacy, RAG, model registry, deployments, and chat.",
 };
 
 export default function WhyUsePage() {
@@ -29,7 +29,7 @@ export default function WhyUsePage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12">
-      <h1 className="text-3xl font-bold text-foreground">Why use LLM Builder</h1>
+      <h1 className="text-3xl font-bold text-foreground">Why use RAGline</h1>
       <p className="mt-2 text-muted">
         A single platform for self-hosted AI: RAG, models, and chat.
       </p>

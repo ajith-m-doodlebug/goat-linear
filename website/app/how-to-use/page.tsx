@@ -1,5 +1,5 @@
 export const metadata = {
-  title: "How to use | LLM Builder",
+  title: "How to use | RAGline",
   description: "Learn how to use LLM Builder: start the app, register, create knowledge bases, add models, deploy, and chat.",
 };
 

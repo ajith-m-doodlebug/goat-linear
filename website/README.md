@@ -1,6 +1,6 @@
-# LLM Builder Company Website
+# RAGline Website
 
-Standalone marketing website for LLM Builder: landing page, how-to-use, why-use, about, contact (Firebase), and protected download (Docker command) for logged-in users.
+Standalone marketing website for RAGline: landing page, how-to-use, why-use, about, contact (Firebase), and protected download (Docker command for LLM Builder) for logged-in users.
 
 ## Setup
 
@@ -42,6 +42,8 @@ Standalone marketing website for LLM Builder: landing page, how-to-use, why-use,
    ```
 
    Opens at **http://localhost:3001** (port 3001 to avoid clashing with the main LLM Builder app on 3000).
+
+**RAGline** is the website brand; the downloadable product is **LLM Builder**.
 
 ## Build
 

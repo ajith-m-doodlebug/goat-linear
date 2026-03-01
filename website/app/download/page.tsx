@@ -42,9 +42,9 @@ export default function DownloadPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-12">
-      <h1 className="text-3xl font-bold text-foreground">Get LLM Builder</h1>
-      <p className="mt-2 text-muted">
+    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16">
+      <h1 className="text-4xl font-bold text-foreground tracking-tight">Download LLM Builder</h1>
+      <p className="mt-3 text-muted text-lg">
         Use the Docker commands below to pull and run the packaged LLM Builder.
       </p>
 

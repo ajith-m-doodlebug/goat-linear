@@ -17,13 +17,16 @@ export function Header() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-gray-100">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 flex items-center justify-between h-16">
-        <Link href="/" className="flex items-center gap-2 text-xl font-semibold text-foreground">
-          <span className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold">
-            L
+    <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 flex items-center justify-between h-18 min-h-[4.5rem]">
+        <Link
+          href="/"
+          className="flex items-center gap-3 text-xl font-bold text-foreground group"
+        >
+          <span className="w-11 h-11 rounded-2xl bg-gradient-to-br from-primary-dark to-primary flex items-center justify-center text-white font-bold shadow-lg shadow-primary/30 group-hover:shadow-glow transition-shadow">
+            R
           </span>
-          LLM Builder
+          <span className="tracking-tight">RAGline</span>
         </Link>
 
         <nav className="hidden md:flex items-center gap-8">
@@ -31,7 +34,7 @@ export function Header() {
             <Link
               key={link.href}
               href={link.href}
-              className="text-muted hover:text-foreground transition-colors"
+              className="text-muted hover:text-foreground font-medium transition-colors relative after:absolute after:left-0 after:bottom-[-2px] after:h-0.5 after:bg-primary after:rounded-full after:transition-all after:origin-left hover:after:w-full after:w-0"
             >
               {link.label}
             </Link>
@@ -45,7 +48,7 @@ export function Header() {
             <>
               <Link
                 href="/download"
-                className="text-muted hover:text-foreground transition-colors text-sm font-medium"
+                className="text-muted hover:text-primary font-semibold transition-colors text-sm"
               >
                 Download
               </Link>
@@ -57,7 +60,7 @@ export function Header() {
             <>
               <Link
                 href="/login"
-                className="text-muted hover:text-foreground transition-colors text-sm font-medium"
+                className="text-muted hover:text-foreground font-semibold transition-colors text-sm"
               >
                 Log In
               </Link>
@@ -69,7 +72,7 @@ export function Header() {
 
           <button
             type="button"
-            className="md:hidden p-2 rounded-lg hover:bg-gray-100"
+            className="md:hidden p-2.5 rounded-xl hover:bg-slate-100 transition-colors"
             onClick={() => setMobileOpen(!mobileOpen)}
             aria-label="Toggle menu"
           >
@@ -85,12 +88,12 @@ export function Header() {
       </div>
 
       {mobileOpen && (
-        <div className="md:hidden border-t border-gray-100 bg-white px-4 py-3 flex flex-col gap-2">
+        <div className="md:hidden border-t border-slate-200/60 bg-white/95 backdrop-blur-xl px-4 py-4 flex flex-col gap-1">
           {navLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className="py-2 text-muted hover:text-foreground"
+              className="py-3 px-3 rounded-xl text-muted hover:text-foreground hover:bg-slate-50 font-medium transition-colors"
               onClick={() => setMobileOpen(false)}
             >
               {link.label}
