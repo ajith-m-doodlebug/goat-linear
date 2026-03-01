@@ -25,6 +25,7 @@ router = APIRouter()
 
 # Safe upload: only types the ingest worker can parse; max 50 MB
 ALLOWED_EXTENSIONS = {".txt", ".pdf", ".docx", ".doc", ".html", ".htm"}
+ALLOWED_EXTENSIONS_DOCUMENTATION = {".zip"}
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 
@@ -176,6 +177,7 @@ async def upload_document(
     file: UploadFile = File(...),
     config: str | None = Form(None),
     preset_id: str | None = Form(None),
+    upload_type: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_admin),
 ):
@@ -184,10 +186,16 @@ async def upload_document(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
     safe_name = _safe_basename(file.filename or "document")
     ext = os.path.splitext(safe_name)[1].lower()
-    if ext not in ALLOWED_EXTENSIONS:
+    is_documentation_zip = (
+        (upload_type or "").strip().lower() == "documentation"
+        and ext in ALLOWED_EXTENSIONS_DOCUMENTATION
+    )
+    if is_documentation_zip:
+        pass  # .zip allowed for documentation upload type
+    elif ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File type not allowed. Use: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+            detail=f"File type not allowed. Use: {', '.join(sorted(ALLOWED_EXTENSIONS))} or .zip for documentation.",
         )
     settings = get_settings()
     upload_dir = os.path.join(settings.upload_dir, kb_id)
@@ -219,11 +227,12 @@ async def upload_document(
                 config_dict = None
         doc_config = _resolve_config_from_preset(preset_id, config_dict, str(user.id), db)
 
+    source_type = "documentation_zip" if is_documentation_zip else "file"
     doc = Document(
         id=doc_id,
         knowledge_base_id=kb_id,
         name=safe_name,
-        source_type="file",
+        source_type=source_type,
         storage_path=storage_path,
         status=DocumentStatus.PENDING,
         config=doc_config,
@@ -265,12 +274,20 @@ def search(
             limit=top_k,
             with_payload=True,
         )
-        return {
-            "results": [
-                {"text": r.payload.get("text", ""), "source": r.payload.get("source", ""), "score": r.score}
-                for r in results
-            ]
-        }
+        out = []
+        for r in results:
+            p = r.payload or {}
+            item = {"text": p.get("text", ""), "source": p.get("source", ""), "score": r.score}
+            if p.get("source_path") is not None:
+                item["source_path"] = p["source_path"]
+            if p.get("breadcrumb") is not None:
+                item["breadcrumb"] = p["breadcrumb"]
+            if p.get("heading") is not None:
+                item["heading"] = p["heading"]
+            if p.get("section_index") is not None:
+                item["section_index"] = p["section_index"]
+            out.append(item)
+        return {"results": out}
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
 

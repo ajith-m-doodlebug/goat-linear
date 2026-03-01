@@ -88,6 +88,7 @@ export default function KnowledgePage() {
   const [editDocConfig, setEditDocConfig] = useState<RagConfigFormValues>(DEFAULT_RAG_CONFIG);
   const [editDocPresetId, setEditDocPresetId] = useState<string>("");
   const [dragOver, setDragOver] = useState(false);
+  const [uploadType, setUploadType] = useState<"file" | "documentation">("file");
   const emptyStateFileInputRef = useRef<HTMLInputElement>(null);
   const headerFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -192,28 +193,34 @@ export default function KnowledgePage() {
 
   const ACCEPT_EXT = [".txt", ".pdf", ".docx", ".doc", ".html", ".htm"];
   const isAcceptedFile = (file: File) =>
-    ACCEPT_EXT.some((ext) => file.name.toLowerCase().endsWith(ext));
+    uploadType === "documentation"
+      ? file.name.toLowerCase().endsWith(".zip")
+      : ACCEPT_EXT.some((ext) => file.name.toLowerCase().endsWith(ext));
 
   const uploadSingleFile = useCallback(
     async (
       file: File,
-      opts?: { config?: RagConfigFormValues; presetId?: string }
+      opts?: { config?: RagConfigFormValues; presetId?: string; uploadType?: "file" | "documentation" }
     ): Promise<Document | null> => {
       if (!selected) return null;
       const form = new FormData();
       form.append("file", file);
-      if (opts?.presetId) form.append("preset_id", opts.presetId);
-      if (opts?.config) {
-        form.append(
-          "config",
-          JSON.stringify({
-            chunk_strategy: opts.config.chunk_strategy,
-            chunk_size: opts.config.chunk_size,
-            chunk_overlap: opts.config.chunk_overlap,
-            embedding_model: opts.config.embedding_model,
-            embedding_query_prefix: opts.config.embedding_query_prefix || null,
-          })
-        );
+      if (opts?.uploadType === "documentation") {
+        form.append("upload_type", "documentation");
+      } else {
+        if (opts?.presetId) form.append("preset_id", opts.presetId);
+        if (opts?.config) {
+          form.append(
+            "config",
+            JSON.stringify({
+              chunk_strategy: opts.config!.chunk_strategy,
+              chunk_size: opts.config!.chunk_size,
+              chunk_overlap: opts.config!.chunk_overlap,
+              embedding_model: opts.config!.embedding_model,
+              embedding_query_prefix: opts.config!.embedding_query_prefix || null,
+            })
+          );
+        }
       }
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const token = localStorage.getItem("access_token");
@@ -228,7 +235,14 @@ export default function KnowledgePage() {
     [selected]
   );
 
-  const getUploadOpts = useCallback((): { config?: RagConfigFormValues; presetId?: string } | undefined => {
+  const getUploadOpts = useCallback((): {
+    config?: RagConfigFormValues;
+    presetId?: string;
+    uploadType?: "file" | "documentation";
+  } | undefined => {
+    if (uploadType === "documentation") {
+      return { uploadType: "documentation" };
+    }
     if (uploadPresetId || (uploadConfig && uploadConfig.chunk_strategy)) {
       return {
         config: uploadConfig,
@@ -236,17 +250,18 @@ export default function KnowledgePage() {
       };
     }
     return undefined;
-  }, [uploadConfig, uploadPresetId]);
+  }, [uploadType, uploadConfig, uploadPresetId]);
 
   const handleHeaderFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (!files?.length || !selected) return;
+      const toUpload = uploadType === "documentation" ? [files[0]] : Array.from(files);
       setUploading(true);
       try {
         const opts = getUploadOpts();
-        for (let i = 0; i < files.length; i++) {
-          const doc = await uploadSingleFile(files[i], opts);
+        for (let i = 0; i < toUpload.length; i++) {
+          const doc = await uploadSingleFile(toUpload[i], opts);
           if (doc) setDocuments((d) => [doc, ...d]);
         }
       } catch (err) {
@@ -256,7 +271,7 @@ export default function KnowledgePage() {
         e.target.value = "";
       }
     },
-    [selected, uploadSingleFile, getUploadOpts]
+    [selected, uploadType, uploadSingleFile, getUploadOpts]
   );
 
   const handleDrop = useCallback(
@@ -608,18 +623,44 @@ export default function KnowledgePage() {
             <CardHeader className="min-h-[3.25rem] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <h2 className="text-base font-semibold text-slate-800">Documents</h2>
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <Button
-                  variant="ghost"
-                  className="text-slate-600 text-sm"
-                  onClick={() => setShowUploadConfig((v) => !v)}
-                >
-                  {showUploadConfig ? "Hide" : "Set chunking for uploads"}
-                </Button>
+                <div className="flex rounded-[var(--radius)] border border-[var(--border)] p-0.5 bg-slate-50">
+                  <button
+                    type="button"
+                    onClick={() => setUploadType("file")}
+                    className={`px-3 py-1.5 text-sm rounded-[calc(var(--radius)-2px)] transition-colors ${
+                      uploadType === "file"
+                        ? "bg-white shadow-sm text-slate-800 font-medium"
+                        : "text-slate-600 hover:text-slate-800"
+                    }`}
+                  >
+                    File
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUploadType("documentation")}
+                    className={`px-3 py-1.5 text-sm rounded-[calc(var(--radius)-2px)] transition-colors ${
+                      uploadType === "documentation"
+                        ? "bg-white shadow-sm text-slate-800 font-medium"
+                        : "text-slate-600 hover:text-slate-800"
+                    }`}
+                  >
+                    Documentation (ZIP)
+                  </button>
+                </div>
+                {uploadType === "file" && (
+                  <Button
+                    variant="ghost"
+                    className="text-slate-600 text-sm"
+                    onClick={() => setShowUploadConfig((v) => !v)}
+                  >
+                    {showUploadConfig ? "Hide" : "Set chunking for uploads"}
+                  </Button>
+                )}
                 <input
                   ref={headerFileInputRef}
                   type="file"
-                  multiple
-                  accept=".txt,.pdf,.docx,.doc,.html,.htm"
+                  multiple={uploadType === "file"}
+                  accept={uploadType === "documentation" ? ".zip" : ".txt,.pdf,.docx,.doc,.html,.htm"}
                   className="hidden"
                   onChange={handleHeaderFileChange}
                 />
@@ -632,7 +673,7 @@ export default function KnowledgePage() {
                 </Button>
               </div>
             </CardHeader>
-            {showUploadConfig && (
+            {uploadType === "file" && showUploadConfig && (
               <div className="px-4 pb-3 border-b border-[var(--border)]">
                 <RagConfigForm
                   value={uploadConfig}
@@ -660,8 +701,8 @@ export default function KnowledgePage() {
                   <input
                     ref={emptyStateFileInputRef}
                     type="file"
-                    multiple
-                    accept=".txt,.pdf,.docx,.doc,.html,.htm"
+                    multiple={uploadType === "file"}
+                    accept={uploadType === "documentation" ? ".zip" : ".txt,.pdf,.docx,.doc,.html,.htm"}
                     className="hidden"
                     onChange={(e) => {
                       const files = e.target.files;
@@ -670,8 +711,9 @@ export default function KnowledgePage() {
                       (async () => {
                         setUploading(true);
                         try {
-                          for (let i = 0; i < files.length; i++) {
-                            const doc = await uploadSingleFile(files[i], opts);
+                          const toUpload = uploadType === "documentation" ? [files[0]] : Array.from(files);
+                          for (let i = 0; i < toUpload.length; i++) {
+                            const doc = await uploadSingleFile(toUpload[i], opts);
                             if (doc) setDocuments((d) => [doc, ...d]);
                           }
                         } catch (err) {
@@ -686,7 +728,13 @@ export default function KnowledgePage() {
                   <div className="text-center py-4 px-4">
                     <p className="font-medium text-slate-700">{dragOver ? "Drop files here" : "No documents"}</p>
                     <p className="mt-1 text-sm text-slate-500 max-w-sm mx-auto">
-                      {dragOver ? "Release to upload" : "Drag and drop PDF, DOCX, TXT, or HTML here, or click to browse."}
+                      {uploadType === "documentation"
+                        ? dragOver
+                          ? "Release to upload"
+                          : "Drag and drop a documentation ZIP here, or click to browse."
+                        : dragOver
+                          ? "Release to upload"
+                          : "Drag and drop PDF, DOCX, TXT, or HTML here, or click to browse."}
                     </p>
                   </div>
                 </div>

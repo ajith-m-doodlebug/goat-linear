@@ -317,7 +317,6 @@ export default function ChatPage() {
                       {m.citations && m.citations.length > 0 && (
                         <details
                           className={`mt-2 text-xs ${m.role === "user" ? "text-brand-100" : "text-slate-600"}`}
-                          open={m.role === "assistant" && m.content.startsWith("Error generating response")}
                         >
                           <summary className="cursor-pointer hover:underline">
                             {m.role === "assistant" && m.content.startsWith("Error generating response")

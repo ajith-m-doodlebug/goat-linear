@@ -19,7 +19,7 @@ class Document(Base):
     id = Column(String(36), primary_key=True, index=True)
     knowledge_base_id = Column(String(36), ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(512), nullable=False)  # filename or URL
-    source_type = Column(String(32), nullable=False, default="file")  # file, url
+    source_type = Column(String(32), nullable=False, default="file")  # file, url, documentation_zip
     storage_path = Column(String(1024), nullable=True)  # relative path for file uploads
     status = Column(
         Enum(DocumentStatus, values_callable=lambda obj: [e.value for e in obj]),

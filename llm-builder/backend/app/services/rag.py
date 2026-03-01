@@ -1,6 +1,7 @@
 """RAG: hybrid retrieval (semantic + keyword), then LLM. Best-practice pipeline."""
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from qdrant_client.models import Filter, FieldCondition, MatchValue, Range
 from app.db.base import SessionLocal
 from app.models.deployment import Deployment
 from app.models.knowledge_base import KnowledgeBase
@@ -133,41 +134,120 @@ def _merge_and_take_top_k(
     vector_results: list,
     keywords: set[str],
     top_k: int,
-) -> tuple[list[str], list[dict]]:
+) -> tuple[list[str], list[dict], list[dict]]:
     """
     Merge keyword and vector chunks; dedupe by text. Sort by (n_matched desc, score desc)
-    so chunks that match more question keywords always rank higher (e.g. CCCS+instance+parameters
-    beats generic "instance parameters"). Return top_k chunks.
+    so chunks that match more question keywords always rank higher. Return top_k chunks.
+    Also returns list of payloads (one per chunk) for optional adjacent-context expansion.
     """
-    # text -> (n_matched, score, source)
+    # text -> (n_matched, score, source, payload)
     best = {}
     for n_matched, point in keyword_scored:
-        text = (point.payload or {}).get("text", "")
-        source = (point.payload or {}).get("source", "")
+        payload = point.payload or {}
+        text = payload.get("text", "")
+        source = payload.get("source", "")
         if not text:
             continue
         score = 0.5 + 0.2 * n_matched
         prev = best.get(text)
         if prev is None or (n_matched > prev[0]) or (n_matched == prev[0] and score > prev[1]):
-            best[text] = (n_matched, score, source)
+            best[text] = (n_matched, score, source, payload)
     for r in vector_results:
-        text = (r.payload or {}).get("text", "")
-        source = (r.payload or {}).get("source", "")
+        payload = r.payload or {}
+        text = payload.get("text", "")
+        source = payload.get("source", "")
         if not text:
             continue
         n_matched = _count_keyword_matches(text, keywords) if keywords else 0
         score = r.score + 0.25 * n_matched
         prev = best.get(text)
         if prev is None or (n_matched > prev[0]) or (n_matched == prev[0] and score > prev[1]):
-            best[text] = (n_matched, score, source)
-    # Sort by more keyword matches first, then by score
+            best[text] = (n_matched, score, source, payload)
     ordered = sorted(best.items(), key=lambda x: (-x[1][0], -x[1][1]))[:top_k]
     context_parts = [text for text, _ in ordered]
-    citations = [
-        {"text": text, "source": source, "score": score}
-        for text, (_, score, source) in ordered
-    ]
-    return context_parts, citations
+    payloads = [payload for _, (_, _, _, payload) in ordered]
+    citations = []
+    for text, (_, score, source, payload) in ordered:
+        c = {"text": text, "source": source, "score": score}
+        if payload.get("source_path") is not None:
+            c["source_path"] = payload["source_path"]
+        if payload.get("breadcrumb") is not None:
+            c["breadcrumb"] = payload["breadcrumb"]
+        if payload.get("heading") is not None:
+            c["heading"] = payload["heading"]
+        if payload.get("section_index") is not None:
+            c["section_index"] = payload["section_index"]
+        citations.append(c)
+    return context_parts, citations, payloads
+
+
+def _fetch_all_chunks_for_file(
+    client,
+    collection_name: str,
+    document_id: str,
+    source_path: str,
+) -> list[tuple[int, str]]:
+    """
+    Fetch all chunks for a documentation file, ordered by section_index.
+    Returns list of (section_index, text).
+    """
+    try:
+        points, _ = client.scroll(
+            collection_name=collection_name,
+            scroll_filter=Filter(
+                must=[
+                    FieldCondition(key="document_id", match=MatchValue(value=document_id)),
+                    FieldCondition(key="source_path", match=MatchValue(value=source_path)),
+                ]
+            ),
+            limit=200,
+            with_payload=True,
+            with_vectors=False,
+        )
+    except Exception:
+        return []
+    out = []
+    for pt in points:
+        payload = pt.payload or {}
+        idx = payload.get("section_index", 0)
+        text = (payload.get("text") or "").strip()
+        if text:
+            out.append((idx, text))
+    out.sort(key=lambda x: x[0])
+    return out
+
+
+def _expand_context_with_same_file(
+    client,
+    collection_name: str,
+    context_parts: list[str],
+    payloads: list[dict],
+) -> list[str]:
+    """
+    For documentation chunks: when a result comes from a doc file (source_path, section_index),
+    include the ENTIRE file (all sections) so answers like "Explain different types of X"
+    get the full page (e.g. Measurements intro + Transient + AC + DC). Each file is added
+    at most once, at the position of its first appearance in the result list.
+    """
+    expanded = []
+    seen_file: set[tuple[str, str]] = set()
+    for part, payload in zip(context_parts, payloads):
+        doc_id = payload.get("document_id")
+        source_path = payload.get("source_path")
+        if doc_id is None or source_path is None or payload.get("section_index") is None:
+            expanded.append(part)
+            continue
+        key = (doc_id, source_path)
+        if key in seen_file:
+            continue
+        seen_file.add(key)
+        chunks = _fetch_all_chunks_for_file(client, collection_name, doc_id, source_path)
+        if chunks:
+            full_text = "\n\n".join(text for _, text in chunks)
+            expanded.append(full_text)
+        else:
+            expanded.append(part)
+    return expanded
 
 
 def run_rag(
@@ -232,12 +312,21 @@ def run_rag(
 
                 # 3) Merge both streams: dedupe by text, score, take top_k total (works with partial results)
                 if keyword_scored or vector_results:
-                    context_parts, citations = _merge_and_take_top_k(
+                    context_parts, citations, payloads = _merge_and_take_top_k(
                         keyword_scored,
                         vector_results,
                         keywords,
                         top_k,
                     )
+                    # For documentation chunks: include full file when any chunk from that file is in results
+                    context_parts = _expand_context_with_same_file(
+                        client,
+                        kb.qdrant_collection_name,
+                        context_parts,
+                        payloads,
+                    )
+                else:
+                    citations = []
 
         context = "\n\n".join(context_parts) if context_parts else "No relevant context found."
         prompt_template = None
