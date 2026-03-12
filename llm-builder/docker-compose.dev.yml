@@ -1,8 +1,8 @@
 # Dev override: mount source and enable reload. Use with:
-#   docker compose -p goat -f docker-compose.yml -f docker-compose.dev.yml up -d
-# Or: ./dev.sh
+#   docker compose -p ragline -f docker-compose.yml -f docker-compose.dev.yml up -d
+# Or: ./start.sh
 
-name: goat
+name: ragline
 
 services:
   app:

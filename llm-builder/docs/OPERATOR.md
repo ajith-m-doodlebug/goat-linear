@@ -2,12 +2,12 @@
 
 ## Start / stop
 
-This project uses the Docker Compose project name **goat** (containers and volumes are scoped to it).
+This project uses the Docker Compose project name **ragline** (containers and volumes are scoped to it).
 
 - **First-time setup:** `./setup.sh` (creates .env, builds, starts infra, runs migrations, starts all)
 - **Start all services:** `./start.sh` (uses dev override: backend `--reload`, frontend `npm run dev`; reload on save)
-- **Stop:** `./stop.sh` or `docker compose -p goat down`
-- **View logs:** `docker compose -p goat -f docker-compose.yml -f docker-compose.dev.yml logs -f app` (or `worker`, `web`, …)
+- **Stop:** `./stop.sh` or `docker compose -p ragline down`
+- **View logs:** `docker compose -p ragline -f docker-compose.yml -f docker-compose.dev.yml logs -f app` (or `worker`, `web`, …)
 
 ## Health and readiness
 

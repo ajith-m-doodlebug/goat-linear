@@ -1,3 +1,5 @@
+# For server only: use after loading the image tar from your local build.
+# No source code or build context needed. Image names match: docker compose build (project name "ragline").
 name: ragline
 
 services:
@@ -33,7 +35,6 @@ services:
       - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
-    # No healthcheck: official image has no wget/curl; app/worker depend on container start only
 
   adminer:
     image: adminer:latest
@@ -46,16 +47,14 @@ services:
       ADMINER_DEFAULT_SERVER: postgres
 
   app:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ragline-app:latest
+    pull_policy: never
     env_file: .env
     environment:
       DATABASE_URL: postgresql://llmbuilder:llmbuilder@postgres:5432/llmbuilder
       REDIS_URL: redis://redis:6379/0
       QDRANT_URL: http://qdrant:6333
       UPLOAD_DIR: /tmp/uploads
-      # Ollama on host: use host.docker.internal (Mac/Windows). On Linux set model endpoint URL to host IP or use docker-compose.gpu.yml.
       OLLAMA_DEFAULT_URL: http://host.docker.internal:11434
     volumes:
       - uploads_data:/tmp/uploads
@@ -82,9 +81,8 @@ services:
       start_period: 10s
 
   worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ragline-worker:latest
+    pull_policy: never
     env_file: .env
     environment:
       DATABASE_URL: postgresql://llmbuilder:llmbuilder@postgres:5432/llmbuilder
@@ -108,9 +106,8 @@ services:
     restart: unless-stopped
 
   web:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: ragline-web:latest
+    pull_policy: never
     env_file: .env
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000

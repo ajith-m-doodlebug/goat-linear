@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import { useTopBar } from "@/app/dashboard/TopBarContext";
 import { PageHeader } from "@/app/components/ui/PageHeader";
@@ -27,6 +27,7 @@ export default function ChatPage() {
   const [showNewChat, setShowNewChat] = useState(false);
   const [newChatDeploymentId, setNewChatDeploymentId] = useState("");
   const [menuSessionId, setMenuSessionId] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [renameSession, setRenameSession] = useState<Session | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
 
@@ -83,6 +84,10 @@ export default function ChatPage() {
     document.addEventListener("click", close);
     return () => document.removeEventListener("click", close);
   }, [menuSessionId]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const createSessionForDeployment = async (deploymentId: string) => {
     setLoading(true);
@@ -148,6 +153,10 @@ export default function ChatPage() {
     const content = input.trim();
     setInput("");
     setSending(true);
+    setMessages((prev: Message[]) => [
+      ...prev,
+      { id: "u-" + Date.now(), role: "user", content, citations: null, created_at: new Date().toISOString() },
+    ]);
     try {
       const res = await apiRequest<{ response: string; citations: { text: string; source: string; score: number }[] }>(
         `/api/v1/chat/sessions/${currentSession.id}/messages`,
@@ -155,13 +164,11 @@ export default function ChatPage() {
       );
       setMessages((prev: Message[]) => [
         ...prev,
-        { id: "u-" + Date.now(), role: "user", content, citations: null, created_at: new Date().toISOString() },
         { id: "a-" + Date.now(), role: "assistant", content: res.response, citations: res.citations || [], created_at: new Date().toISOString() },
       ]);
     } catch (err) {
       setMessages((prev: Message[]) => [
         ...prev,
-        { id: "u-" + Date.now(), role: "user", content, citations: null, created_at: new Date().toISOString() },
         { id: "a-" + Date.now(), role: "assistant", content: "Error: " + (err instanceof Error ? err.message : String(err)), citations: [], created_at: new Date().toISOString() },
       ]);
     } finally {
@@ -302,7 +309,7 @@ export default function ChatPage() {
                   {deployments.find((d: Deployment) => d.id === currentSession.deployment_id)?.name ?? "Chat"}
                 </p>
               </div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="flex-1 overflow-y-auto p-4 space-y-4" id="messages-container">
                 {messages.length === 0 && (
                   <p className="text-sm text-slate-500">Start the conversation below.</p>
                 )}
@@ -338,6 +345,14 @@ export default function ChatPage() {
                     </div>
                   </div>
                 ))}
+                {sending && (
+                  <div className="flex justify-start">
+                    <div className="bg-slate-100 text-slate-500 rounded-[var(--radius-lg)] px-4 py-3 text-sm">
+                      Thinking…
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
               </div>
               <form onSubmit={send} className="p-4 border-t border-[var(--border)] flex gap-2">
                 <textarea

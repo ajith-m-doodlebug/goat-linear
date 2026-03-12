@@ -8,7 +8,7 @@ Fully self-hosted AI infrastructure platform: data ingestion, RAG, fine-tuning, 
 - **Backend:** FastAPI, SQLAlchemy, Alembic, Redis (RQ), PostgreSQL, Qdrant
 - **Deploy:** Docker Compose; optional GPU stack (Ollama, vLLM)
 
-## Quick start (Docker, project name: goat)
+## Quick start (Docker, project name: ragline)
 
 ```bash
 ./setup.sh   # create .env, build, start infra, run migrations, start all
@@ -16,7 +16,7 @@ Fully self-hosted AI infrastructure platform: data ingestion, RAG, fine-tuning, 
 ./stop.sh    # stop containers (data preserved)
 ```
 
-Containers and volumes are named under the **goat** project so they don’t clash with other compose stacks.
+Containers and volumes are named under the **ragline** project so they don’t clash with other compose stacks.
 
 - App: http://localhost:3000  
 - API: http://localhost:8000  
@@ -30,7 +30,7 @@ Register a user and use **Knowledge** (upload docs, RAG), **Models** (Ollama/Ope
 
 - `frontend/` — Next.js app
 - `backend/` — FastAPI app, workers, migrations
-- `docker-compose.yml` — all services (project name: **goat**)
+- `docker-compose.yml` — all services (project name: **ragline**)
 - `docker-compose.gpu.yml` — optional GPU inference
 - `setup.sh` / `start.sh` / `stop.sh` — Docker lifecycle for this project only
 - `docs/` — [README](docs/README.md), [USAGE.md](docs/USAGE.md) (how to use & upload files), [OPERATOR.md](docs/OPERATOR.md), [PORTS.md](docs/PORTS.md) (port reference: main app vs exports)

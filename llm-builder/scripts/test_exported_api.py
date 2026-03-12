@@ -6,9 +6,10 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from typing import Optional
 
 
-def req(base_url: str, method: str, path: str, body: dict | None = None, timeout: int = 60) -> dict:
+def req(base_url: str, method: str, path: str, body: Optional[dict] = None, timeout: int = 60) -> dict:
     url = f"{base_url.rstrip('/')}{path}"
     data = json.dumps(body).encode() if body else None
     request = urllib.request.Request(url, data=data, method=method)

@@ -1,4 +1,4 @@
-# Build From Scratch: LLM Builder (goat)
+# Build From Scratch: LLM Builder (ragline)
 
 **Instruction for the AI:** When given this document, recreate the entire project from scratch. Create a directory (e.g. `llm-builder`) and all files as specified. Use the exact file paths relative to that directory. Implement any file not fully pasted below by following the described behavior and the directory structure. After creation, running `./setup.sh` then `./start.sh` from inside the project root should start the application: **App** http://localhost:3000, **API** http://localhost:8000, **Docs** http://localhost:8000/docs.
 
@@ -8,7 +8,7 @@
 
 ## 1. Project overview
 
-- **Name:** LLM Builder (Docker Compose project name: **goat**)
+- **Name:** LLM Builder (Docker Compose project name: **ragline**)
 - **Purpose:** Self-hosted AI infrastructure: data ingestion, RAG, fine-tuning, model registry, deployments, and chat with roles.
 - **Stack:**
   - **Frontend:** Next.js 14, React 18, TypeScript, Tailwind CSS
@@ -180,7 +180,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 ### 3.2 `docker-compose.yml`
 
 ```yaml
-name: goat
+name: ragline
 
 services:
   postgres:
@@ -308,10 +308,10 @@ volumes:
 
 ```yaml
 # Dev override: mount source and enable reload. Use with:
-#   docker compose -p goat -f docker-compose.yml -f docker-compose.dev.yml up -d
+#   docker compose -p ragline -f docker-compose.yml -f docker-compose.dev.yml up -d
 # Or: ./dev.sh
 
-name: goat
+name: ragline
 
 services:
   app:
@@ -356,8 +356,8 @@ volumes:
 Create a file that extends the main compose with an Ollama service (image `ollama/ollama`, port 11434) and optionally vLLM, so that GPU inference can be run alongside the stack. For a minimal stub:
 
 ```yaml
-# Optional GPU stack. Use: docker compose -p goat -f docker-compose.yml -f docker-compose.gpu.yml up -d
-name: goat
+# Optional GPU stack. Use: docker compose -p ragline -f docker-compose.yml -f docker-compose.gpu.yml up -d
+name: ragline
 services:
   ollama:
     image: ollama/ollama
@@ -373,66 +373,66 @@ volumes:
 
 ```bash
 #!/usr/bin/env bash
-# Setup LLM Builder (goat): env, build, start infra, run migrations.
+# Setup LLM Builder (ragline): env, build, start infra, run migrations.
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-PROJECT="goat"
+PROJECT="ragline"
 
-echo "[goat] Setting up..."
+echo "[ragline] Setting up..."
 if [[ ! -f .env ]]; then
-  echo "[goat] Creating .env from .env.example"
+  echo "[ragline] Creating .env from .env.example"
   cp .env.example .env
-  echo "[goat] Please set SECRET_KEY in .env (e.g. openssl rand -hex 32)"
+  echo "[ragline] Please set SECRET_KEY in .env (e.g. openssl rand -hex 32)"
 fi
 
-echo "[goat] Building images..."
+echo "[ragline] Building images..."
 docker compose -p "$PROJECT" build
 
-echo "[goat] Starting postgres, redis, qdrant..."
+echo "[ragline] Starting postgres, redis, qdrant..."
 docker compose -p "$PROJECT" up -d postgres redis qdrant
 
-echo "[goat] Waiting for postgres to be ready..."
+echo "[ragline] Waiting for postgres to be ready..."
 until docker compose -p "$PROJECT" exec -T postgres pg_isready -U llmbuilder -d llmbuilder 2>/dev/null; do
   sleep 2
 done
 
-echo "[goat] Starting app once to run migrations..."
+echo "[ragline] Starting app once to run migrations..."
 docker compose -p "$PROJECT" run --rm app alembic upgrade head
 
-echo "[goat] Starting all services..."
+echo "[ragline] Starting all services..."
 docker compose -p "$PROJECT" up -d
 
-echo "[goat] Setup done. App: http://localhost:3000  API: http://localhost:8000  Docs: http://localhost:8000/docs"
-echo "[goat] Use ./start.sh to start, ./stop.sh to stop."
+echo "[ragline] Setup done. App: http://localhost:3000  API: http://localhost:8000  Docs: http://localhost:8000/docs"
+echo "[ragline] Use ./start.sh to start, ./stop.sh to stop."
 ```
 
 ### 3.6 `start.sh`
 
 ```bash
 #!/usr/bin/env bash
-# Start goat (LLM Builder) with reload on save: backend (--reload), frontend (npm run dev).
+# Start ragline (LLM Builder) with reload on save: backend (--reload), frontend (npm run dev).
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
-docker compose -p goat -f docker-compose.yml -f docker-compose.dev.yml up -d
-echo "[goat] Backend (--reload) and frontend (npm run dev) will reload on save."
-echo "[goat] App: http://localhost:3000  API: http://localhost:8000"
-echo "[goat] Streaming logs (Ctrl+C to stop following; containers keep running)..."
-docker compose -p goat -f docker-compose.yml -f docker-compose.dev.yml logs -f
+docker compose -p ragline -f docker-compose.yml -f docker-compose.dev.yml up -d
+echo "[ragline] Backend (--reload) and frontend (npm run dev) will reload on save."
+echo "[ragline] App: http://localhost:3000  API: http://localhost:8000"
+echo "[ragline] Streaming logs (Ctrl+C to stop following; containers keep running)..."
+docker compose -p ragline -f docker-compose.yml -f docker-compose.dev.yml logs -f
 ```
 
 ### 3.7 `stop.sh`
 
 ```bash
 #!/usr/bin/env bash
-# Stop goat (LLM Builder) containers only. Volumes and data are preserved.
+# Stop ragline (LLM Builder) containers only. Volumes and data are preserved.
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
-docker compose -p goat down
-echo "[goat] Stopped."
+docker compose -p ragline down
+echo "[ragline] Stopped."
 ```
 
 ### 3.8 `dev.sh`

@@ -86,7 +86,7 @@ The API returns **502** when it cannot reach the model or the model returns an e
 
 - **Ollama is not started by default.** The main stack (`./start.sh`) does not include Ollama. To run Ollama in Docker with GPU support, use the GPU compose file:
   ```bash
-  docker compose -p goat -f docker-compose.yml -f docker-compose.gpu.yml up -d
+  docker compose -p ragline -f docker-compose.yml -f docker-compose.gpu.yml up -d
   ```
   This starts the **ollama** service on port **11434**. The app container can reach it as `http://ollama:11434` (same Docker network). When adding a model in the UI, set provider **Ollama**, leave **Endpoint URL** empty or set `http://ollama:11434`, and set **Model ID** to the Ollama model name (e.g. `llama2`, `mistral`).
 
