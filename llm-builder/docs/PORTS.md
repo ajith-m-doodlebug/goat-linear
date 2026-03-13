@@ -11,7 +11,7 @@ Single reference for all ports so the main app and exported deployments can run 
 | Qdrant    | 6333      | 6333               | Vector DB                  |
 | Postgres  | 5432      | 5432               | Database                   |
 | Redis     | 6379      | 6379               | Queue / cache              |
-| Adminer   | 8080      | 8080               | DB admin UI (optional)     |
+| Adminer   | 8096      | 8080               | DB admin UI (optional)     |
 
 - **API base URL:** `http://localhost:8000`
 - **Qdrant (from host):** `http://localhost:6333`  
