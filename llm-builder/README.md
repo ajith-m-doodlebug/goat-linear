@@ -23,8 +23,7 @@ Containers and volumes are named under the **ragline** project so they don’t c
 - Docs: http://localhost:8000/docs  
 - Adminer (DB): http://localhost:8080 — login with Server `postgres`, User `llmbuilder`, Password `llmbuilder`, Database `llmbuilder`  
 
-Register a user and use **Knowledge** (upload docs, RAG), **Models** (Ollama/OpenAI/vLLM), **Deployments** (RAG + model + prompt), and **Chat**.  
-**How to use (including file upload):** [docs/USAGE.md](docs/USAGE.md)
+Register a user and use **Knowledge** (upload docs, RAG), **Models** (Ollama/OpenAI/vLLM), **Deployments** (RAG + model + prompt), and **Chat**.
 
 ## Project layout
 
@@ -33,8 +32,7 @@ Register a user and use **Knowledge** (upload docs, RAG), **Models** (Ollama/Ope
 - `docker-compose.yml` — all services (project name: **ragline**)
 - `docker-compose.gpu.yml` — optional GPU inference
 - `setup.sh` / `start.sh` / `stop.sh` — Docker lifecycle for this project only
-- `docs/` — [README](docs/README.md), [USAGE.md](docs/USAGE.md) (how to use & upload files), [OPERATOR.md](docs/OPERATOR.md), [PORTS.md](docs/PORTS.md) (port reference: main app vs exports)
 
 ## Users and login
 
-There is a single user type: **admin**. The **first user you register** is admin and has full access. Every user is an admin (one role). Log in with email and password. See [docs/USAGE.md](docs/USAGE.md) for details.
+There is a single user type: **admin**. The **first user you register** is admin and has full access. Every user is an admin (one role). Log in with email and password.
