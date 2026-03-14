@@ -1,8 +1,9 @@
 from fastapi import APIRouter
 
-from app.api.v1 import auth, users, knowledge_bases, models, deployments, chat, rag_configs
+from app.api.v1 import auth, users, knowledge_bases, models, deployments, chat, rag_configs, setup
 
 api_router = APIRouter(prefix="/api/v1")
+api_router.include_router(setup.router, prefix="/setup", tags=["setup"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(knowledge_bases.router, prefix="/knowledge-bases", tags=["knowledge-bases"])

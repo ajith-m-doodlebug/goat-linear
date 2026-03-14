@@ -36,6 +36,20 @@ services:
       - qdrant_data:/qdrant/storage
     # No healthcheck: official image has no wget/curl; app/worker depend on container start only
 
+  postfix:
+    image: boky/postfix:latest
+    environment:
+      # Allow any sender domain (set ALLOWED_SENDER_DOMAINS to restrict in production)
+      ALLOW_EMPTY_SENDER_DOMAINS: "true"
+      # Optional: relay via external SMTP (e.g. Gmail, SendGrid). Leave unset for direct delivery.
+      # RELAYHOST: smtp.gmail.com:587
+      # RELAYHOST_USERNAME: your@gmail.com
+      # RELAYHOST_PASSWORD: app-password
+      # RELAYHOST_TLS_LEVEL: may
+    ports:
+      - "1025:587"
+    restart: unless-stopped
+
   adminer:
     image: adminer:latest
     ports:
@@ -58,6 +72,11 @@ services:
       UPLOAD_DIR: /tmp/uploads
       # Ollama on host: use host.docker.internal (Mac/Windows). On Linux set model endpoint URL to host IP or use docker-compose.gpu.yml.
       OLLAMA_DEFAULT_URL: http://host.docker.internal:11434
+      # Postfix in same stack: use for OTP emails (override in .env if using external SMTP)
+      SMTP_HOST: postfix
+      SMTP_PORT: 587
+      SMTP_FROM_EMAIL: noreply@localhost
+      SMTP_USE_TLS: "false"
     volumes:
       - uploads_data:/tmp/uploads
     depends_on:
@@ -66,6 +85,8 @@ services:
       redis:
         condition: service_healthy
       qdrant:
+        condition: service_started
+      postfix:
         condition: service_started
     ports:
       - "8000:8000"
@@ -93,6 +114,10 @@ services:
       QDRANT_URL: http://qdrant:6333
       UPLOAD_DIR: /tmp/uploads
       OLLAMA_DEFAULT_URL: http://host.docker.internal:11434
+      SMTP_HOST: postfix
+      SMTP_PORT: 587
+      SMTP_FROM_EMAIL: noreply@localhost
+      SMTP_USE_TLS: "false"
     volumes:
       - uploads_data:/tmp/uploads
     depends_on:
@@ -101,6 +126,8 @@ services:
       redis:
         condition: service_healthy
       qdrant:
+        condition: service_started
+      postfix:
         condition: service_started
     command: python -m app.workers.runner
     deploy:

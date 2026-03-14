@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ProfileIcon, SettingsIcon } from "@/app/components/ui/icons";
+import { ProfileIcon, SettingsIcon } from "@/app/components/ui";
 import type { UserResponse } from "@/lib/api";
 
 const THEME_KEY = "app-theme";

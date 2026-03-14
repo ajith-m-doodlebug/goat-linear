@@ -8,7 +8,7 @@ import { Card, CardBody, CardHeader } from "@/app/components/ui/Card";
 import { Button } from "@/app/components/ui/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState";
 import { Modal } from "@/app/components/ui/Modal";
-import { EditIcon, DeleteIcon, PlayIcon, StopIcon, DownloadIcon } from "@/app/components/ui/icons";
+import { EditIcon, DeleteIcon, PlayIcon, StopIcon, DownloadIcon } from "@/app/components/ui";
 
 type Deployment = {
   id: string;

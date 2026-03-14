@@ -9,7 +9,7 @@ import { Card } from "@/app/components/ui/Card";
 import { Button } from "@/app/components/ui/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState";
 import { Modal } from "@/app/components/ui/Modal";
-import { MoreVerticalIcon } from "@/app/components/ui/icons";
+import { MoreVerticalIcon } from "@/app/components/ui";
 
 type Deployment = { id: string; name: string };
 type Session = { id: string; deployment_id: string; title: string; updated_at: string };

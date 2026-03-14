@@ -1,4 +1,5 @@
 from app.models.user import User, Role
+from app.models.system_settings import SystemSettings
 from app.models.knowledge_base import KnowledgeBase
 from app.models.document import Document, DocumentStatus
 from app.models.model_registry import ModelRegistry, ModelProvider, ModelType
@@ -10,7 +11,7 @@ from app.models.chat import ChatSession, ChatMessage
 from app.models.rag_config_preset import RagConfigPreset
 
 __all__ = [
-    "User", "Role", "KnowledgeBase", "Document", "DocumentStatus",
+    "User", "Role", "SystemSettings", "KnowledgeBase", "Document", "DocumentStatus",
     "ModelRegistry", "ModelProvider", "ModelType", "PromptTemplate", "Deployment",
     "DeploymentVersion", "HostedSessionMessage",
     "ChatSession", "ChatMessage", "RagConfigPreset",

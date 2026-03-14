@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     # http://host.docker.internal:11434 (Mac/Windows) or http://ollama:11434 if Ollama is in the same compose.
     ollama_default_url: str = "http://localhost:11434"
 
+    # Email (OTP, etc.) — SMTP
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = "noreply@localhost"
+    smtp_use_tls: bool = True
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

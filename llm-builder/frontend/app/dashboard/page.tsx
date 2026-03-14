@@ -468,7 +468,7 @@ export default function DashboardPage() {
           <h2 className="text-lg font-semibold text-slate-800">Recent chat sessions</h2>
           {sessions.length > 0 && (
             <Link href="/dashboard/chat">
-              <Button variant="secondary" size="sm">
+              <Button variant="secondary">
                 Open Chat
               </Button>
             </Link>

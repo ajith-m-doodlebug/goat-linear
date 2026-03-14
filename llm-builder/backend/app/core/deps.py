@@ -43,7 +43,14 @@ def get_current_user(
 
 
 def require_admin(user: Annotated[User, Depends(get_current_user)]) -> User:
-    """Only one role: admin. Any authenticated user is admin."""
-    if user.role != Role.ADMIN:
+    """Admin or super_admin can access admin areas."""
+    if user.role not in (Role.ADMIN, Role.SUPER_ADMIN):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    return user
+
+
+def require_super_admin(user: Annotated[User, Depends(get_current_user)]) -> User:
+    """Only super_admin (e.g. for assigning roles)."""
+    if user.role != Role.SUPER_ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Super admin only")
     return user

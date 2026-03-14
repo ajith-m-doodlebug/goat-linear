@@ -7,7 +7,7 @@ import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Card, CardBody, CardHeader } from "@/app/components/ui/Card";
 import { Button } from "@/app/components/ui/Button";
 import { Modal } from "@/app/components/ui/Modal";
-import { EditIcon, DeleteIcon } from "@/app/components/ui/icons";
+import { EditIcon, DeleteIcon } from "@/app/components/ui";
 import { RagConfigForm, type RagConfigFormValues } from "@/app/components/rag/RagConfigForm";
 
 export type RagConfigPreset = {

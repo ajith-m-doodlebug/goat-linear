@@ -58,6 +58,7 @@ const pathnameToTitle: Record<string, string> = {
   "/dashboard/chat": "Chat",
   "/dashboard/prompts": "Prompts",
   "/dashboard/rag-configs": "Chunking & Embedding",
+  "/dashboard/users": "Users",
 };
 
 export function getTitleFromPathname(pathname: string): string {

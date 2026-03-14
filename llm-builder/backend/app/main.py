@@ -2,15 +2,47 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from app.core.config import get_settings
 from app.core.logging_config import setup_logging
+from app.core.setup_guard import is_setup_completed
 from app.api.v1 import api_router
 from app.api.hosted import router as hosted_router
 from app.db.base import engine, Base
 
 settings = get_settings()
 setup_logging(use_json=not settings.debug, level="DEBUG" if settings.debug else "INFO")
+
+
+def _is_setup_allowed_path(path: str, method: str) -> bool:
+    """True if this path is allowed when setup is not completed."""
+    if path == "/api/v1/setup/status" and method == "GET":
+        return True
+    if path == "/api/v1/setup" and method == "POST":
+        return True
+    if path in ("/health", "/ready", "/", "/docs", "/redoc", "/openapi.json"):
+        return True
+    if path.startswith("/openapi.") or path.startswith("/docs") or path.startswith("/redoc"):
+        return True
+    return False
+
+
+class SetupRequiredMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path.rstrip("/") or "/"
+        method = request.method
+        if _is_setup_allowed_path(path, method):
+            return await call_next(request)
+        if path.startswith("/api/v1/") or path.startswith("/hosted/"):
+            if not is_setup_completed():
+                return JSONResponse(
+                    status_code=503,
+                    content={"detail": "Setup required. Complete setup first."},
+                )
+        return await call_next(request)
 
 
 @asynccontextmanager
@@ -27,6 +59,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(SetupRequiredMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],

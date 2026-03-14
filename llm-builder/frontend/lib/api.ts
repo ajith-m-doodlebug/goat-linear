@@ -95,16 +95,33 @@ export async function apiRequest<T>(
   return res.json() as Promise<T>;
 }
 
+export type RegisterWithOtpResponse = {
+  user: UserResponse;
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+};
+
 export const authApi = {
   login: (email: string, password: string) =>
     apiRequest<TokenResponse>("/api/v1/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
-  register: (email: string, password: string, full_name?: string) =>
-    apiRequest<UserResponse>("/api/v1/auth/register", {
+  requestOtp: (email: string) =>
+    apiRequest<{ message: string }>("/api/v1/auth/request-otp", {
       method: "POST",
-      body: JSON.stringify({ email, password, full_name }),
+      body: JSON.stringify({ email }),
+    }),
+  registerWithOtp: (
+    email: string,
+    otp: string,
+    password: string,
+    full_name?: string
+  ) =>
+    apiRequest<RegisterWithOtpResponse>("/api/v1/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email, otp, password, full_name }),
     }),
   refresh: (refresh_token: string) =>
     apiRequest<TokenResponse>("/api/v1/auth/refresh", {
@@ -112,4 +129,28 @@ export const authApi = {
       body: JSON.stringify({ refresh_token }),
     }),
   me: () => apiRequest<UserResponse>("/api/v1/auth/me"),
+};
+
+export type SetupStatusResponse = { setup_completed: boolean };
+
+export const setupApi = {
+  getStatus: (): Promise<SetupStatusResponse> =>
+    fetch(`${API_BASE}/api/v1/setup/status`)
+      .then((r) => r.json())
+      .then((data) => data as SetupStatusResponse),
+  runSetup: (body: {
+    super_admin_email: string;
+    password: string;
+    company_name: string;
+    allowed_email_domain: string;
+    setup_default_prompts_and_models: boolean;
+  }) =>
+    fetch(`${API_BASE}/api/v1/setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => {
+      if (!r.ok) return r.json().then((err) => { throw new Error(err.detail || "Setup failed"); });
+      return r.json();
+    }),
 };

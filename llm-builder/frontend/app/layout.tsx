@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { SetupGate } from "@/app/components/SetupGate";
 
 export const metadata: Metadata = {
   title: "LLM Builder",
@@ -21,7 +22,7 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased min-h-screen" suppressHydrationWarning>
-        {children}
+        <SetupGate>{children}</SetupGate>
       </body>
     </html>
   );

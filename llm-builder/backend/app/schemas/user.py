@@ -18,11 +18,15 @@ class UserUpdate(BaseModel):
     role: Role | None = None
     is_active: bool | None = None
     password: str | None = None
+    default_model_id: str | None = None
+    default_prompt_id: str | None = None
 
 
 class UserResponse(UserBase):
     id: str
     created_at: str
+    default_model_id: str | None = None
+    default_prompt_id: str | None = None
 
     class Config:
         from_attributes = True

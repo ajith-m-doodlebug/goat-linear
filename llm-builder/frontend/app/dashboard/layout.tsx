@@ -16,6 +16,7 @@ import {
   ChatBubbleIcon,
   DocumentTextIcon,
   LayersIcon,
+  UsersIcon,
 } from "@/app/components/ui";
 
 const navGroups = [
@@ -37,6 +38,11 @@ const navGroups = [
     ],
   },
 ];
+
+const adminNavGroup = {
+  label: "Admin",
+  items: [{ href: "/dashboard/users", label: "Users", Icon: UsersIcon }],
+};
 
 export default function DashboardLayout({
   children,
@@ -118,6 +124,34 @@ export default function DashboardLayout({
                 </ul>
               </div>
             ))}
+            {user.role === "super_admin" && (
+              <div>
+                <p className="px-3 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  {adminNavGroup.label}
+                </p>
+                <ul className="space-y-0.5">
+                  {adminNavGroup.items.map(({ href, label, Icon }) => {
+                    const isActive = pathname === href;
+                    return (
+                      <li key={href}>
+                        <Link
+                          href={href}
+                          className={
+                            "flex items-center gap-3 px-3 py-2 rounded-[var(--radius)] text-sm font-medium transition-colors " +
+                            (isActive
+                              ? "bg-brand-50 text-brand-700"
+                              : "text-slate-600 hover:bg-slate-100 hover:text-slate-800")
+                          }
+                        >
+                          {Icon && <Icon className="w-5 h-5 flex-shrink-0" />}
+                          {label}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
           </nav>
           <div className="p-3 border-t border-[var(--border)]">
             <div className="px-3 py-2 text-xs text-slate-500 truncate" title={user.email}>

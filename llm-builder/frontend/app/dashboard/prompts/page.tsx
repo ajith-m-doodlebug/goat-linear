@@ -8,7 +8,7 @@ import { Card, CardBody, CardHeader } from "@/app/components/ui/Card";
 import { Button } from "@/app/components/ui/Button";
 import { Modal } from "@/app/components/ui/Modal";
 import { EmptyState } from "@/app/components/ui/EmptyState";
-import { EditIcon, DeleteIcon } from "@/app/components/ui/icons";
+import { EditIcon, DeleteIcon } from "@/app/components/ui";
 
 const PROMPT_TEMPLATES_API = "/api/v1/deployments/prompt-templates";
 
