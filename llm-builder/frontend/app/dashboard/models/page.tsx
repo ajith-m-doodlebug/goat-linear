@@ -140,7 +140,7 @@ export default function ModelsPage() {
 
   return (
     <div>
-      <PageHeader description="Register LLM endpoints (Ollama, vLLM, OpenAI-compatible) for use in deployments and chat." />
+      <PageHeader description="Register LLM endpoints (Ollama, vLLM, OpenAI, Anthropic Claude) for use in deployments and chat." />
 
       <Modal open={showForm} onClose={() => setShowForm(false)} title="Add model">
         <form onSubmit={createModel} className="space-y-4">
@@ -149,7 +149,7 @@ export default function ModelsPage() {
             <select
               value={form.provider}
               onChange={(e) => {
-                const provider = e.target.value as "ollama" | "vllm" | "openai" | "custom";
+                const provider = e.target.value as "ollama" | "vllm" | "openai" | "anthropic" | "custom";
                 setForm((f) => ({
                   ...f,
                   provider,
@@ -158,10 +158,18 @@ export default function ModelsPage() {
                       ? ""
                       : provider === "openai"
                         ? "https://api.openai.com"
-                        : f.endpoint_url,
+                        : provider === "anthropic"
+                          ? "https://api.anthropic.com"
+                          : f.endpoint_url,
                   model_id:
-                    provider === "ollama" ? "llama2" : provider === "openai" ? "gpt-4o" : f.model_id,
-                  api_key: ["openai", "custom"].includes(provider) ? f.api_key : "",
+                    provider === "ollama"
+                      ? "llama2"
+                      : provider === "openai"
+                        ? "gpt-4o"
+                        : provider === "anthropic"
+                          ? "claude-3-5-sonnet-20241022"
+                          : f.model_id,
+                  api_key: ["openai", "anthropic", "custom"].includes(provider) ? f.api_key : "",
                 }));
               }}
               className="input"
@@ -169,6 +177,7 @@ export default function ModelsPage() {
               <option value="ollama">Ollama</option>
               <option value="vllm">vLLM</option>
               <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic (Claude)</option>
               <option value="custom">Custom REST</option>
             </select>
           </div>
@@ -193,7 +202,9 @@ export default function ModelsPage() {
                     ? "e.g. http://vllm:8000"
                     : form.provider === "openai"
                       ? "e.g. https://api.openai.com"
-                      : "Base URL of your API"
+                      : form.provider === "anthropic"
+                        ? "https://api.anthropic.com"
+                        : "Base URL of your API"
               }
               value={form.endpoint_url}
               onChange={(e) => setForm((f) => ({ ...f, endpoint_url: e.target.value }))}
@@ -204,23 +215,36 @@ export default function ModelsPage() {
             <label className="label">Model ID</label>
             <input
               type="text"
-              placeholder={form.provider === "ollama" ? "e.g. llama2, mistral" : "e.g. gpt-4"}
+              placeholder={
+                form.provider === "ollama"
+                  ? "e.g. llama2, mistral"
+                  : form.provider === "anthropic"
+                    ? "e.g. claude-3-5-sonnet-20241022, claude-3-opus-20240229"
+                    : "e.g. gpt-4"
+              }
               value={form.model_id}
               onChange={(e) => setForm((f) => ({ ...f, model_id: e.target.value }))}
               className="input"
             />
           </div>
-          {(form.provider === "openai" || form.provider === "custom") && (
+          {(form.provider === "openai" || form.provider === "anthropic" || form.provider === "custom") && (
             <div>
               <label className="label">
-                API key {form.provider === "openai" ? "(required for OpenAI)" : "(optional for custom)"}
+                API key{" "}
+                {form.provider === "openai"
+                  ? "(required for OpenAI)"
+                  : form.provider === "anthropic"
+                    ? "(required for Anthropic)"
+                    : "(optional for custom)"}
               </label>
               <input
                 type="password"
                 placeholder={
                   form.provider === "openai"
                     ? "sk-... (from platform.openai.com)"
-                    : "Bearer token if required"
+                    : form.provider === "anthropic"
+                      ? "sk-ant-... (from console.anthropic.com)"
+                      : "Bearer token if required"
                 }
                 value={form.api_key}
                 onChange={(e) => setForm((f) => ({ ...f, api_key: e.target.value }))}
@@ -282,7 +306,7 @@ export default function ModelsPage() {
             {models.length === 0 ? (
               <EmptyState
                 title="No models yet"
-                description="Add an Ollama, vLLM, or OpenAI-compatible model to use in deployments and chat."
+                description="Add an Ollama, vLLM, OpenAI, or Anthropic Claude model to use in deployments and chat."
                 action={
                   <Button variant="primary" onClick={() => setShowForm(true)}>
                     Add model

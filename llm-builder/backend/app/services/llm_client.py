@@ -42,6 +42,34 @@ def _openai_complete(model_id: str, prompt: str, base_url: str, api_key: str | N
         return choice.get("message", {}).get("content", "")
 
 
+def _anthropic_complete(model_id: str, prompt: str, base_url: str, api_key: str | None, **kwargs) -> str:
+    """Anthropic Messages API: POST /v1/messages. Requires api_key."""
+    if not api_key:
+        raise ValueError("Anthropic provider requires an API key")
+    url = (base_url or "https://api.anthropic.com").rstrip("/") + "/v1/messages"
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    with httpx.Client(timeout=120.0) as client:
+        r = client.post(
+            url,
+            headers=headers,
+            json={
+                "model": model_id,
+                "max_tokens": kwargs.get("max_tokens", 1024),
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": kwargs.get("temperature", 0.7),
+            },
+        )
+        r.raise_for_status()
+        data = r.json()
+        content = data.get("content", [])
+        text_parts = [b.get("text", "") for b in content if b.get("type") == "text"]
+        return "".join(text_parts)
+
+
 def complete(model: ModelRegistry, prompt: str, **extra_config) -> str:
     """Run completion for the given registered model. Returns generated text."""
     base_url = model.endpoint_url or None
@@ -52,6 +80,8 @@ def complete(model: ModelRegistry, prompt: str, **extra_config) -> str:
 
     if model.provider == "ollama":
         return _ollama_complete(model_id, prompt, base_url or _ollama_default_url(), **config)
+    if model.provider == "anthropic":
+        return _anthropic_complete(model_id, prompt, base_url or "https://api.anthropic.com", api_key, **config)
     if model.provider in ("vllm", "openai", "custom"):
         return _openai_complete(model_id, prompt, base_url, api_key, **config)
     raise ValueError(f"Unsupported provider: {model.provider}")
@@ -75,6 +105,9 @@ def complete_from_frozen_config(model_config: dict, prompt: str, **extra_config)
 
     if provider == "ollama":
         return _ollama_complete(model_id, prompt, base_url or _ollama_default_url(), **extra)
+    if provider == "anthropic":
+        api_key = api_key or os.environ.get(model_config.get("api_key_env") or "ANTHROPIC_API_KEY")
+        return _anthropic_complete(model_id, prompt, base_url or "https://api.anthropic.com", api_key, **extra)
     if provider in ("vllm", "openai", "custom"):
         if base_url and not base_url.endswith("/v1"):
             base_url = base_url + "/v1"
@@ -94,6 +127,9 @@ def health_check(model: ModelRegistry) -> bool:
                 return r.status_code == 200
         except Exception:
             return False
+    if model.provider == "anthropic":
+        # No public health endpoint; consider reachable if endpoint and key are set
+        return bool((model.endpoint_url or "https://api.anthropic.com").strip() and model.api_key_encrypted)
     if model.provider in ("vllm", "openai", "custom") and model.endpoint_url:
         try:
             base = model.endpoint_url.rstrip("/")
