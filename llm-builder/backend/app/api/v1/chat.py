@@ -8,6 +8,7 @@ from app.db.base import get_db
 from app.models.user import User
 from app.models.chat import ChatSession, ChatMessage
 from app.models.deployment import Deployment
+from app.models.deployment_version import DeploymentVersion
 from app.core.deps import get_current_user
 from app.services.rag import run_rag
 
@@ -120,9 +121,16 @@ def send_message(
     if not content:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="content required")
 
-    # Load last N turns for memory
+    # Load last N turns for memory (from deployment's live version frozen_config or default)
     dep = db.query(Deployment).filter(Deployment.id == session.deployment_id).first()
-    memory_turns = int(dep.memory_turns or "10") if dep else 10
+    memory_turns = 10
+    if dep and dep.live_version:
+        v = db.query(DeploymentVersion).filter(
+            DeploymentVersion.id == dep.live_version,
+            DeploymentVersion.deployment_id == dep.id,
+        ).first()
+        if v and v.frozen_config:
+            memory_turns = int(v.frozen_config.get("memory_turns", 10))
     past = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at.desc()).limit(memory_turns * 2).all()
     chat_history = [{"role": m.role, "content": m.content} for m in reversed(past)]
 

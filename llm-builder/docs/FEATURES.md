@@ -87,6 +87,12 @@ LLM Builder is a fully self-hosted AI infrastructure platform that lets you inge
     - Memory and RAG configuration (e.g. number of history turns).
   - Chat UI interacts with deployments rather than raw models.
 
+- **Hosted API (Deploy)**  
+  - A deployment can be **Deployed** once from the UI, creating a stable hosted endpoint keyed by `deployment_id`.  
+  - **URL:** `GET /hosted/{deployment_id}/health`, `POST /hosted/{deployment_id}/v1/chat/completions` (same port as the main API).  
+  - **Versions:** Multiple frozen snapshots (v1, v2, …); only one version can be **running** at a time. Start/Stop and **New version** from the Versions UI.  
+  - **Conversation memory (optional):** When enabled at deploy time, clients can send `session_id` (body or `X-Session-Id` header) so the server keeps the last N turns and injects them into the prompt.
+
 - **Exportable RAG APIs**  
   - Deployments can be exported as standalone RAG API bundles with their own Docker Compose config.  
   - Each export gets unique host ports for the API and Qdrant, derived from the deployment ID.  

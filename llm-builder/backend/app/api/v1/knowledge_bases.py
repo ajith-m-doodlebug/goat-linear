@@ -268,12 +268,13 @@ def search(
     )
     client = get_qdrant()
     try:
-        results = client.search(
+        resp = client.query_points(
             collection_name=kb.qdrant_collection_name,
-            query_vector=vector,
+            query=vector,
             limit=top_k,
             with_payload=True,
         )
+        results = getattr(resp, "points", None) or []
         out = []
         for r in results:
             p = r.payload or {}

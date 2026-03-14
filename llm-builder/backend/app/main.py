@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.logging_config import setup_logging
 from app.api.v1 import api_router
+from app.api.hosted import router as hosted_router
 from app.db.base import engine, Base
 
 settings = get_settings()
@@ -35,6 +36,7 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
+app.include_router(hosted_router, prefix="/hosted", tags=["hosted"])
 
 
 @app.get("/health")

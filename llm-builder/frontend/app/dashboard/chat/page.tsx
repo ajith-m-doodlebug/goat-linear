@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiRequest } from "@/lib/api";
 import { useTopBar } from "@/app/dashboard/TopBarContext";
 import { PageHeader } from "@/app/components/ui/PageHeader";
@@ -16,6 +17,9 @@ type Citation = { text: string; source: string; score: number };
 type Message = { id: string; role: string; content: string; citations: Citation[] | null; created_at: string };
 
 export default function ChatPage() {
+  const searchParams = useSearchParams();
+  const sessionIdFromUrl = searchParams.get("session");
+
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedDeploymentId, setSelectedDeploymentId] = useState<string | null>(null);
@@ -67,6 +71,16 @@ export default function ChatPage() {
     loadDeployments();
     loadSessions();
   }, []);
+
+  // Open session from URL (e.g. from home "Recent chat sessions")
+  useEffect(() => {
+    if (!sessionIdFromUrl || sessions.length === 0) return;
+    const session = sessions.find((s) => s.id === sessionIdFromUrl);
+    if (session) {
+      setCurrentSession(session);
+      setSelectedDeploymentId(session.deployment_id);
+    }
+  }, [sessionIdFromUrl, sessions]);
 
   useEffect(() => {
     if (!currentSession) {

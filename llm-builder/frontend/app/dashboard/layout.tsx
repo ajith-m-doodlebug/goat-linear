@@ -7,23 +7,33 @@ import { authApi, clearTokens, loadTokensFromStorage } from "@/lib/api";
 import type { UserResponse } from "@/lib/api";
 import { TopBarProvider, useTopBarState, getTitleFromPathname } from "./TopBarContext";
 import { SettingsMenu } from "./SettingsMenu";
+import {
+  HelpCircleIcon,
+  HomeIcon,
+  BookIcon,
+  CpuIcon,
+  RocketIcon,
+  ChatBubbleIcon,
+  DocumentTextIcon,
+  LayersIcon,
+} from "@/app/components/ui";
 
 const navGroups = [
   {
     label: "Workflow",
     items: [
-      { href: "/dashboard", label: "Home" },
-      { href: "/dashboard/knowledge", label: "Knowledge" },
-      { href: "/dashboard/models", label: "Models" },
-      { href: "/dashboard/deployments", label: "Deployments" },
-      { href: "/dashboard/chat", label: "Chat" },
+      { href: "/dashboard", label: "Home", Icon: HomeIcon },
+      { href: "/dashboard/knowledge", label: "Knowledge", Icon: BookIcon },
+      { href: "/dashboard/models", label: "Models", Icon: CpuIcon },
+      { href: "/dashboard/deployments", label: "Deployments", Icon: RocketIcon },
+      { href: "/dashboard/chat", label: "Chat", Icon: ChatBubbleIcon },
     ],
   },
   {
     label: "More",
     items: [
-      { href: "/dashboard/prompts", label: "Prompts" },
-      { href: "/dashboard/rag-configs", label: "Chunking & Embedding" },
+      { href: "/dashboard/prompts", label: "Prompts", Icon: DocumentTextIcon },
+      { href: "/dashboard/rag-configs", label: "Chunking & Embedding", Icon: LayersIcon },
     ],
   },
 ];
@@ -86,19 +96,20 @@ export default function DashboardLayout({
                   {group.label}
                 </p>
                 <ul className="space-y-0.5">
-                  {group.items.map(({ href, label }) => {
+                  {group.items.map(({ href, label, Icon }) => {
                     const isActive = pathname === href;
                     return (
                       <li key={href}>
                         <Link
                           href={href}
                           className={
-                            "block px-3 py-2 rounded-[var(--radius)] text-sm font-medium transition-colors " +
+                            "flex items-center gap-3 px-3 py-2 rounded-[var(--radius)] text-sm font-medium transition-colors " +
                             (isActive
                               ? "bg-brand-50 text-brand-700"
                               : "text-slate-600 hover:bg-slate-100 hover:text-slate-800")
                           }
                         >
+                          {Icon && <Icon className="w-5 h-5 flex-shrink-0" />}
                           {label}
                         </Link>
                       </li>
@@ -141,6 +152,16 @@ function DashboardTopBar({
     <header className="flex-shrink-0 h-14 px-6 flex items-center justify-between gap-4 border-b border-[var(--border)] bg-[var(--card)]">
       <h1 className="text-xl font-semibold text-slate-800 truncate">{displayTitle}</h1>
       <div className="flex items-center gap-2 flex-shrink-0">
+        {pathname === "/dashboard" && (
+          <Link
+            href="/dashboard/help"
+            className="p-2 rounded-[var(--radius)] text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+            title="Help & features"
+            aria-label="Help & features"
+          >
+            <HelpCircleIcon className="w-5 h-5" />
+          </Link>
+        )}
         {action != null && <div>{action}</div>}
         {pathname === "/dashboard" && <SettingsMenu user={user} onLogout={onLogout} />}
       </div>

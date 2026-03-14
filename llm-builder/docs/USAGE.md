@@ -102,6 +102,35 @@ Use **Deployments** to combine a model with a knowledge base (RAG) and prompts; 
 
 Create a **deployment** to tie a **knowledge base** (RAG) to a **model** and a system/user prompt. Deployments are what **Chat** uses — pick a deployment there to start a conversation.
 
+### Hosted API (Deploy)
+
+You can **Deploy** a deployment to get a **stable hosted API** (no zip download). The API is served on the same host/port as the main app.
+
+1. On the Deployments page, click **Deploy** for a deployment (only shown when it has no hosted versions yet).
+2. Optionally enable **conversation memory** and set how many turns to keep.
+3. After creating the first version, click **Versions**, then **Start** on a version to make it live.
+4. The endpoint is always: `POST http://<API_BASE>/hosted/<deployment_id>/v1/chat/completions`.
+
+**Example (no memory):**
+
+```bash
+curl -X POST "http://localhost:8000/hosted/<deployment_id>/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "user", "content": "Your question here"}]}'
+```
+
+**Example (with conversation memory):**  
+When you enabled memory for that version, send the same `messages` and add a **session ID** so the server keeps context for that conversation:
+
+```bash
+curl -X POST "http://localhost:8000/hosted/<deployment_id>/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: my-conversation-1" \
+  -d '{"messages": [{"role": "user", "content": "Your question here"}]}'
+```
+
+You can also put `"session_id": "my-conversation-1"` in the JSON body. If no version is running, the API returns **503**.
+
 ## 6. Chat
 
 1. Go to **Chat**.  

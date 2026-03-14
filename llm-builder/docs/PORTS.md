@@ -17,6 +17,19 @@ Single reference for all ports so the main app and exported deployments can run 
 - **Qdrant (from host):** `http://localhost:6333`  
 - **Qdrant (from app/worker in Docker):** `http://qdrant:6333` (set via `QDRANT_URL`)
 
+## Hosted deployments (in-process)
+
+Deployments can be **hosted** from the app (Deploy → create version → Start). The hosted API is served on the **same port as the main API** (8000), under path `/hosted/{deployment_id}/`:
+
+| Path | Method | Purpose |
+|------|--------|---------|
+| `/hosted/{deployment_id}/health` | GET | Health check (200 if a version is running, 503 otherwise). |
+| `/hosted/{deployment_id}/v1/chat/completions` | POST | OpenAI-style chat completions (RAG + LLM). |
+
+- **Base URL:** `http://localhost:8000` (or your API host).
+- **Example:** `POST http://localhost:8000/hosted/<deployment_id>/v1/chat/completions` with body `{"messages": [{"role": "user", "content": "Your question"}]}`.
+- When **conversation memory** is enabled for a version, send `session_id` in the request body or `X-Session-Id` header to keep conversation context per session.
+
 ## Exported deployment bundles
 
 Each export gets **unique** host ports derived from the deployment ID so multiple exports can run with the main app.

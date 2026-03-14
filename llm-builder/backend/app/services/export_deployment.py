@@ -17,6 +17,7 @@ def _export_ports(deployment_id: str) -> tuple[int, int]:
     return api_port, qdrant_port
 
 from app.models.deployment import Deployment
+from app.models.deployment_version import DeploymentVersion
 from app.models.knowledge_base import KnowledgeBase
 from app.models.model_registry import ModelRegistry
 from app.models.prompt_template import PromptTemplate
@@ -66,8 +67,7 @@ def build_export_bundle(db: Session, deployment_id: str) -> bytes:
     if not model:
         raise ValueError("Model not found")
 
-    config = dep.config or {}
-    top_k = min(int(config.get("top_k", 10)), 20)
+    top_k = 10
     prompt_text = DEFAULT_RAG_PROMPT
     if dep.prompt_template_id:
         pt = db.query(PromptTemplate).filter(PromptTemplate.id == dep.prompt_template_id).first()
@@ -121,6 +121,50 @@ def build_export_bundle(db: Session, deployment_id: str) -> bytes:
     docker_compose = _DOCKER_COMPOSE.format(api_port=api_port, qdrant_port=qdrant_port)
     root_readme = _ROOT_README.format(api_port=api_port, qdrant_port=qdrant_port)
 
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("config.json", json.dumps(export_config, indent=2))
+        zf.writestr("qdrant_storage/points.json", json.dumps(points_data))
+        zf.writestr("server/main.py", server_main_py)
+        zf.writestr("server/requirements.txt", server_requirements)
+        zf.writestr("Dockerfile", _DOCKERFILE)
+        zf.writestr("docker-compose.yml", docker_compose)
+        zf.writestr("README.md", root_readme)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def build_export_bundle_from_version(db: Session, deployment_id: str, version_id: str) -> bytes:
+    """
+    Build a zip bundle from a specific hosted version (frozen config + its Qdrant snapshot).
+    Returns zip file as bytes.
+    """
+    v = (
+        db.query(DeploymentVersion)
+        .filter(
+            DeploymentVersion.id == version_id,
+            DeploymentVersion.deployment_id == deployment_id,
+        )
+        .first()
+    )
+    if not v or not v.frozen_config:
+        raise ValueError("Version not found")
+    dep = db.query(Deployment).filter(Deployment.id == deployment_id).first()
+    export_config = {k: v.frozen_config[k] for k in v.frozen_config if k not in ("memory_enabled", "memory_turns")}
+    if "model" in export_config and isinstance(export_config["model"], dict):
+        export_config["model"] = {k: export_config["model"][k] for k in export_config["model"] if k != "_api_key"}
+    points_data: list[dict] = []
+    if export_config.get("has_kb"):
+        collection_name = f"hosted_{version_id}"
+        try:
+            points_data = _get_points_from_collection(collection_name)
+        except Exception:
+            points_data = []
+    api_port, qdrant_port = _export_ports(version_id)
+    server_main_py = _SERVER_MAIN_PY
+    server_requirements = _SERVER_REQUIREMENTS
+    docker_compose = _DOCKER_COMPOSE.format(api_port=api_port, qdrant_port=qdrant_port)
+    root_readme = _ROOT_README.format(api_port=api_port, qdrant_port=qdrant_port)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("config.json", json.dumps(export_config, indent=2))
@@ -334,12 +378,13 @@ def search(query: str) -> tuple[str, list[dict]]:
         return "No relevant context found.", []
     try:
         qv = embed_query(query)
-        hits = get_qdrant().search(
+        resp = get_qdrant().query_points(
             collection_name=COLLECTION_NAME,
-            query_vector=qv,
+            query=qv,
             limit=TOP_K,
             with_payload=True,
         )
+        hits = getattr(resp, "points", None) or []
     except Exception:
         return "No relevant context found.", []
     context_parts = []

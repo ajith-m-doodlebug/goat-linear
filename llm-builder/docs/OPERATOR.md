@@ -17,7 +17,19 @@ This project uses the Docker Compose project name **ragline** (containers and vo
 ## Database
 
 - **Adminer (DB UI):** http://localhost:8080 — System: PostgreSQL, Server: `postgres`, User: `llmbuilder`, Password: `llmbuilder`, Database: `llmbuilder`
-- **Run migrations:** from repo root, `cd backend && alembic upgrade head`
+- **Run migrations (Docker):** from repo root, run inside the app container so it uses the same `DATABASE_URL` as the app. Ensure the app image is up to date (includes the latest migration files):
+  ```bash
+  docker compose build app
+  docker compose run --rm app alembic upgrade head
+  ```
+  If you run `alembic` on the host (`cd backend && alembic upgrade head`), it uses the default URL (localhost + user `llmbuilder`). Use that only if your local Postgres has the `llmbuilder` role; otherwise run migrations via Docker as above.
+- **“Can't locate revision identified by '006'”:** The app image was built before that migration existed. Rebuild the image, then run migrations: `docker compose build app` then the commands below.
+- **“relation already exists” / out-of-sync history:** If the DB already has tables but the `alembic_version` table is missing or empty, Alembic will try to re-run from 001 and fail. Stamp the DB at the revision that matches your current schema, then upgrade (after a fresh `docker compose build app` if needed):
+  ```bash
+  docker compose run --rm app alembic stamp 006
+  docker compose run --rm app alembic upgrade head
+  ```
+  (Use a different revision if your schema is at a different point; 006 = before the deployments `is_hosted`/`live_version` change.)
 - **Backup PostgreSQL:** `docker compose exec postgres pg_dump -U llmbuilder llmbuilder > backup.sql`
 - **Restore:** `docker compose exec -T postgres psql -U llmbuilder llmbuilder < backup.sql`
 

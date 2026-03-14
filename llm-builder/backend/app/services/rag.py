@@ -120,12 +120,13 @@ def _vector_retrieval(
 ) -> list:
     """Run embedding + vector search + keyword re-rank. Used in parallel with keyword retrieval."""
     vector = encode_query_with_model(question, model_id=embedding_model, query_prefix=embedding_query_prefix)
-    raw = client.search(
+    resp = client.query_points(
         collection_name=collection_name,
-        query_vector=vector,
+        query=vector,
         limit=fetch,
         with_payload=True,
     )
+    raw = getattr(resp, "points", None) or []
     return _rerank_with_keyword_boost(raw, question, top_k)
 
 
@@ -274,8 +275,7 @@ def run_rag(
         if dep.knowledge_base_id:
             kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == dep.knowledge_base_id).first()
             if kb:
-                config = dep.config or {}
-                top_k = min(int(config.get("top_k", 10)), 20)
+                top_k = 10
                 emb = resolve_embedding_for_kb(kb.config)
                 embedding_model = emb.get("embedding_model")
                 embedding_query_prefix = emb.get("embedding_query_prefix")
@@ -350,7 +350,7 @@ def run_rag(
             prompt = memory_block + DEFAULT_RAG_PROMPT.format(context=context, question=question)
 
         try:
-            response_text = complete(model, prompt, **(dep.config or {}))
+            response_text = complete(model, prompt)
         except Exception as e:
             err_msg = str(e)
             response_text = "Error generating response: " + err_msg

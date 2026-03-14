@@ -1,34 +1,56 @@
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.db.base import get_db
 from app.models.user import User
 from app.models.deployment import Deployment
+from app.models.deployment_version import DeploymentVersion
 from app.models.prompt_template import PromptTemplate
 from app.schemas.deployment import DeploymentCreate, DeploymentUpdate, DeploymentResponse
+from app.schemas.deployment_version import (
+    DeployRequest,
+    DeployResponse,
+    DeploymentVersionResponse,
+)
 from app.schemas.prompt_template import PromptTemplateCreate, PromptTemplateUpdate, PromptTemplateResponse
 from app.core.deps import get_current_user, require_admin
 from app.services.rag import run_rag
-from app.services.export_deployment import build_export_bundle
+from app.services.export_deployment import build_export_bundle, build_export_bundle_from_version
+from app.services.hosted_deployment import (
+    create_hosted_version,
+    add_deployment_version,
+    start_version,
+    stop_version,
+    delete_version,
+)
 
 router = APIRouter()
 
 
-def _deployment_to_response(d: Deployment) -> DeploymentResponse:
+def _deployment_to_response(
+    d: Deployment,
+    has_hosted_versions: bool | None = None,
+    hosted_status: str | None = None,
+) -> DeploymentResponse:
+    if has_hosted_versions is None:
+        has_hosted_versions = d.is_hosted
+    if hosted_status is None:
+        hosted_status = "live" if d.live_version else ("stopped" if d.is_hosted else None)
     return DeploymentResponse(
         id=d.id,
         name=d.name,
         model_id=d.model_id,
         knowledge_base_id=d.knowledge_base_id,
         prompt_template_id=d.prompt_template_id,
-        memory_turns=d.memory_turns,
-        config=d.config,
-        version=d.version,
+        is_hosted=d.is_hosted,
+        live_version=d.live_version,
         created_at=d.created_at.isoformat() if d.created_at else "",
+        has_hosted_versions=has_hosted_versions,
+        hosted_status=hosted_status,
     )
 
 
@@ -108,9 +130,8 @@ def create_deployment(body: DeploymentCreate, db: Session = Depends(get_db), _: 
         model_id=body.model_id,
         knowledge_base_id=body.knowledge_base_id,
         prompt_template_id=body.prompt_template_id,
-        memory_turns=body.memory_turns,
-        config=body.config,
-        version=body.version,
+        is_hosted=False,
+        live_version=None,
     )
     db.add(d)
     db.commit()
@@ -141,12 +162,10 @@ def update_deployment(
         d.knowledge_base_id = body.knowledge_base_id
     if body.prompt_template_id is not None:
         d.prompt_template_id = body.prompt_template_id
-    if body.memory_turns is not None:
-        d.memory_turns = body.memory_turns
-    if body.config is not None:
-        d.config = body.config
-    if body.version is not None:
-        d.version = body.version
+    if body.is_hosted is not None:
+        d.is_hosted = body.is_hosted
+    if body.live_version is not None:
+        d.live_version = body.live_version
     db.commit()
     db.refresh(d)
     return _deployment_to_response(d)
@@ -181,6 +200,202 @@ def export_deployment(
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/{deployment_id}/versions/{version_id}/export")
+def export_deployment_version(
+    deployment_id: str,
+    version_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Export a specific hosted version as a zip (frozen config + vector snapshot for that version)."""
+    v = (
+        db.query(DeploymentVersion)
+        .filter(
+            DeploymentVersion.id == version_id,
+            DeploymentVersion.deployment_id == deployment_id,
+        )
+        .first()
+    )
+    if not v:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
+    try:
+        zip_bytes = build_export_bundle_from_version(db, deployment_id, version_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    dep = db.query(Deployment).filter(Deployment.id == deployment_id).first()
+    name = (dep.name if dep else "deployment").replace(" ", "-")
+    filename = f"{name}-{v.version_label}-export.zip"
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ---- Hosted deploy and versions ----
+@router.post("/{deployment_id}/deploy", response_model=DeployResponse)
+def deploy_deployment(
+    deployment_id: str,
+    body: DeployRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """First-time Deploy: create first hosted version. Fails if deployment already has versions."""
+    try:
+        v = create_hosted_version(
+            db,
+            deployment_id,
+            memory_enabled=body.memory_enabled,
+            memory_turns=body.memory_turns,
+        )
+    except ValueError as e:
+        if "already has hosted versions" in str(e):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    base = str(request.base_url).rstrip("/")
+    endpoint_url = f"{base}/hosted/{deployment_id}/v1/chat/completions"
+    return DeployResponse(
+        version_id=v.id,
+        version_label=v.version_label,
+        endpoint_url=endpoint_url,
+        status=v.status,
+    )
+
+
+@router.get("/{deployment_id}/versions", response_model=list[DeploymentVersionResponse])
+def list_deployment_versions(
+    deployment_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """List all versions for this deployment."""
+    d = db.query(Deployment).filter(Deployment.id == deployment_id).first()
+    if not d:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deployment not found")
+    versions = (
+        db.query(DeploymentVersion)
+        .filter(DeploymentVersion.deployment_id == deployment_id)
+        .order_by(DeploymentVersion.created_at.desc())
+        .all()
+    )
+    return [
+        DeploymentVersionResponse(
+            id=v.id,
+            deployment_id=v.deployment_id,
+            version_label=v.version_label,
+            status=v.status,
+            memory_enabled=v.frozen_config.get("memory_enabled", False) if v.frozen_config else False,
+            created_at=v.created_at.isoformat() if v.created_at else "",
+            started_at=v.started_at.isoformat() if v.started_at else None,
+            stopped_at=v.stopped_at.isoformat() if v.stopped_at else None,
+        )
+        for v in versions
+    ]
+
+
+@router.post("/{deployment_id}/versions", response_model=DeployResponse)
+def create_new_version(
+    deployment_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Add a new version (freeze current deployment state)."""
+    try:
+        v = add_deployment_version(db, deployment_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    base = str(request.base_url).rstrip("/")
+    endpoint_url = f"{base}/hosted/{deployment_id}/v1/chat/completions"
+    return DeployResponse(
+        version_id=v.id,
+        version_label=v.version_label,
+        endpoint_url=endpoint_url,
+        status=v.status,
+    )
+
+
+@router.post("/{deployment_id}/versions/{version_id}/start", response_model=DeploymentVersionResponse)
+def start_deployment_version(
+    deployment_id: str,
+    version_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Make this version the running one (stops any other running version for this deployment)."""
+    v = db.query(DeploymentVersion).filter(
+        DeploymentVersion.id == version_id,
+        DeploymentVersion.deployment_id == deployment_id,
+    ).first()
+    if not v:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
+    try:
+        v = start_version(db, version_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
+    return DeploymentVersionResponse(
+        id=v.id,
+        deployment_id=v.deployment_id,
+        version_label=v.version_label,
+        status=v.status,
+        memory_enabled=v.frozen_config.get("memory_enabled", False) if v.frozen_config else False,
+        created_at=v.created_at.isoformat() if v.created_at else "",
+        started_at=v.started_at.isoformat() if v.started_at else None,
+        stopped_at=v.stopped_at.isoformat() if v.stopped_at else None,
+    )
+
+
+@router.post("/{deployment_id}/versions/{version_id}/stop", response_model=DeploymentVersionResponse)
+def stop_deployment_version(
+    deployment_id: str,
+    version_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Stop this version (hosted endpoint will return 503 until another version is started)."""
+    v = db.query(DeploymentVersion).filter(
+        DeploymentVersion.id == version_id,
+        DeploymentVersion.deployment_id == deployment_id,
+    ).first()
+    if not v:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
+    try:
+        v = stop_version(db, version_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
+    return DeploymentVersionResponse(
+        id=v.id,
+        deployment_id=v.deployment_id,
+        version_label=v.version_label,
+        status=v.status,
+        memory_enabled=v.frozen_config.get("memory_enabled", False) if v.frozen_config else False,
+        created_at=v.created_at.isoformat() if v.created_at else "",
+        started_at=v.started_at.isoformat() if v.started_at else None,
+        stopped_at=v.stopped_at.isoformat() if v.stopped_at else None,
+    )
+
+
+@router.delete("/{deployment_id}/versions/{version_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_deployment_version(
+    deployment_id: str,
+    version_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Delete a version. If it was running, it is stopped first. Session messages and Qdrant data for this version are removed."""
+    v = db.query(DeploymentVersion).filter(
+        DeploymentVersion.id == version_id,
+        DeploymentVersion.deployment_id == deployment_id,
+    ).first()
+    if not v:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
+    try:
+        delete_version(db, deployment_id, version_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
 
 
 @router.post("/{deployment_id}/run")

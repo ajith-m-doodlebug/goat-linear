@@ -51,6 +51,7 @@ export function useTopBarState() {
 
 const pathnameToTitle: Record<string, string> = {
   "/dashboard": "Home",
+  "/dashboard/help": "Help & features",
   "/dashboard/knowledge": "Knowledge",
   "/dashboard/models": "Models",
   "/dashboard/deployments": "Deployments",

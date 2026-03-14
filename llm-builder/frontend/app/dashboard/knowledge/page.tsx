@@ -541,7 +541,7 @@ export default function KnowledgePage() {
       </Modal>
 
       <div className="flex flex-col lg:flex-row gap-6">
-        <Card className="lg:w-56 flex-shrink-0 flex flex-col h-[28rem]">
+        <Card className="lg:w-72 flex-shrink-0 flex flex-col h-[28rem]">
           <CardHeader className="min-h-[3.25rem] flex items-center flex-shrink-0">
             <h2 className="text-base font-semibold text-slate-800">Bases</h2>
           </CardHeader>

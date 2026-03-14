@@ -57,6 +57,33 @@ def complete(model: ModelRegistry, prompt: str, **extra_config) -> str:
     raise ValueError(f"Unsupported provider: {model.provider}")
 
 
+def complete_from_frozen_config(model_config: dict, prompt: str, **extra_config) -> str:
+    """
+    Run completion using a frozen model config (e.g. from hosted deployment).
+    model_config must have: provider, endpoint_url, model_id; optional: _api_key or api_key_env for OpenAI-style.
+    """
+    import os
+    provider = (model_config.get("provider") or "").lower()
+    base_url = (model_config.get("endpoint_url") or "").strip().rstrip("/") or None
+    model_id = model_config.get("model_id") or "gpt-3.5-turbo"
+    api_key = model_config.get("_api_key")  # in-process: we store it in frozen config
+    if api_key is None and provider in ("openai", "custom"):
+        api_key_env = model_config.get("api_key_env") or "API_KEY"
+        api_key = os.environ.get(api_key_env)
+    extra = model_config.get("extra") or {}
+    extra.update(extra_config)
+
+    if provider == "ollama":
+        return _ollama_complete(model_id, prompt, base_url or _ollama_default_url(), **extra)
+    if provider in ("vllm", "openai", "custom"):
+        if base_url and not base_url.endswith("/v1"):
+            base_url = base_url + "/v1"
+        if not base_url and provider == "ollama":
+            base_url = "http://localhost:11434/v1"
+        return _openai_complete(model_id, prompt, base_url, api_key, **extra)
+    raise ValueError(f"Unsupported provider: {provider}")
+
+
 def health_check(model: ModelRegistry) -> bool:
     """Check if the model endpoint is reachable."""
     if model.provider == "ollama":
