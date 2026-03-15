@@ -80,9 +80,6 @@ export default function KnowledgePage() {
   const [kbPresetId, setKbPresetId] = useState<string>("");
   const [presets, setPresets] = useState<RagPreset[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [showUploadConfig, setShowUploadConfig] = useState(false);
-  const [uploadConfig, setUploadConfig] = useState<RagConfigFormValues>(DEFAULT_RAG_CONFIG);
-  const [uploadPresetId, setUploadPresetId] = useState<string>("");
   const [editDocId, setEditDocId] = useState<string | null>(null);
   const [editDocName, setEditDocName] = useState("");
   const [editDocConfig, setEditDocConfig] = useState<RagConfigFormValues>(DEFAULT_RAG_CONFIG);
@@ -243,14 +240,8 @@ export default function KnowledgePage() {
     if (uploadType === "documentation") {
       return { uploadType: "documentation" };
     }
-    if (uploadPresetId || (uploadConfig && uploadConfig.chunk_strategy)) {
-      return {
-        config: uploadConfig,
-        presetId: uploadPresetId || undefined,
-      };
-    }
     return undefined;
-  }, [uploadType, uploadConfig, uploadPresetId]);
+  }, [uploadType]);
 
   const handleHeaderFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -647,15 +638,6 @@ export default function KnowledgePage() {
                     Documentation (ZIP)
                   </button>
                 </div>
-                {uploadType === "file" && (
-                  <Button
-                    variant="ghost"
-                    className="text-slate-600 text-sm"
-                    onClick={() => setShowUploadConfig((v) => !v)}
-                  >
-                    {showUploadConfig ? "Hide" : "Set chunking for uploads"}
-                  </Button>
-                )}
                 <input
                   ref={headerFileInputRef}
                   type="file"
@@ -673,18 +655,6 @@ export default function KnowledgePage() {
                 </Button>
               </div>
             </CardHeader>
-            {uploadType === "file" && showUploadConfig && (
-              <div className="px-4 pb-3 border-b border-[var(--border)]">
-                <RagConfigForm
-                  value={uploadConfig}
-                  onChange={setUploadConfig}
-                  showPresetDropdown
-                  presets={presets}
-                  presetId={uploadPresetId}
-                  onPresetChange={setUploadPresetId}
-                />
-              </div>
-            )}
             <CardBody className="p-0 overflow-x-auto">
               {documents.length === 0 ? (
                 <div
@@ -762,26 +732,28 @@ export default function KnowledgePage() {
                         </td>
                         <td className="p-3 text-sm text-slate-500">{new Date(d.created_at).toLocaleString()}</td>
                         <td className="p-3 flex gap-2 flex-wrap items-center">
-                          <Button
-                            variant="ghost"
-                            className="text-xs py-1 px-1.5"
-                            onClick={() => {
-                              setEditDocId(d.id);
-                              setEditDocName(d.name);
-                              const c = (d.config || {}) as Record<string, unknown>;
-                              setEditDocConfig({
-                                chunk_strategy: (c.chunk_strategy as string) || "fixed",
-                                chunk_size: typeof c.chunk_size === "number" ? c.chunk_size : 512,
-                                chunk_overlap: typeof c.chunk_overlap === "number" ? c.chunk_overlap : 50,
-                                embedding_model: (c.embedding_model as string) || "all-MiniLM-L6-v2",
-                                embedding_query_prefix: (c.embedding_query_prefix as string) ?? "",
-                              });
-                              setEditDocPresetId("");
-                            }}
-                            title="Edit"
-                          >
-                            <EditIcon />
-                          </Button>
+                          {d.source_type !== "documentation_zip" && (
+                            <Button
+                              variant="ghost"
+                              className="text-xs py-1 px-1.5"
+                              onClick={() => {
+                                setEditDocId(d.id);
+                                setEditDocName(d.name);
+                                const c = (d.config || {}) as Record<string, unknown>;
+                                setEditDocConfig({
+                                  chunk_strategy: (c.chunk_strategy as string) || "fixed",
+                                  chunk_size: typeof c.chunk_size === "number" ? c.chunk_size : 512,
+                                  chunk_overlap: typeof c.chunk_overlap === "number" ? c.chunk_overlap : 50,
+                                  embedding_model: (c.embedding_model as string) || "all-MiniLM-L6-v2",
+                                  embedding_query_prefix: (c.embedding_query_prefix as string) ?? "",
+                                });
+                                setEditDocPresetId("");
+                              }}
+                              title="Edit"
+                            >
+                              <EditIcon />
+                            </Button>
+                          )}
                           {(d.status === "failed" || d.status === "completed") && (
                             <Button variant="ghost" onClick={() => reingest(d.id)}>
                               Re-ingest
