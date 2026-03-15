@@ -75,8 +75,10 @@ export default function KnowledgePage() {
   const [editKbName, setEditKbName] = useState("");
   const [editKbDescription, setEditKbDescription] = useState("");
   const [editKbConfig, setEditKbConfig] = useState<RagConfigFormValues>(DEFAULT_RAG_CONFIG);
+  const [editKbRetrieverMode, setEditKbRetrieverMode] = useState<"hybrid" | "vector_only">("hybrid");
   const [editKbPresetId, setEditKbPresetId] = useState<string>("");
   const [kbConfig, setKbConfig] = useState<RagConfigFormValues>(DEFAULT_RAG_CONFIG);
+  const [kbRetrieverMode, setKbRetrieverMode] = useState<"hybrid" | "vector_only">("hybrid");
   const [kbPresetId, setKbPresetId] = useState<string>("");
   const [presets, setPresets] = useState<RagPreset[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -165,6 +167,7 @@ export default function KnowledgePage() {
         chunk_overlap: kbConfig.chunk_overlap,
         embedding_model: kbConfig.embedding_model,
         embedding_query_prefix: kbConfig.embedding_query_prefix || null,
+        retriever_mode: kbRetrieverMode,
       };
       await apiRequest<KnowledgeBase>("/api/v1/knowledge-bases", {
         method: "POST",
@@ -178,6 +181,7 @@ export default function KnowledgePage() {
       setName("");
       setDescription("");
       setKbConfig(DEFAULT_RAG_CONFIG);
+      setKbRetrieverMode("hybrid");
       setKbPresetId("");
       setShowCreate(false);
       await loadBases();
@@ -324,6 +328,7 @@ export default function KnowledgePage() {
         chunk_overlap: editKbConfig.chunk_overlap,
         embedding_model: editKbConfig.embedding_model,
         embedding_query_prefix: editKbConfig.embedding_query_prefix || null,
+        retriever_mode: editKbRetrieverMode,
       };
       await apiRequest<KnowledgeBase>(`/api/v1/knowledge-bases/${editKbId}`, {
         method: "PATCH",
@@ -431,6 +436,25 @@ export default function KnowledgePage() {
             />
           </div>
           <div className="border-t border-[var(--border)] pt-3">
+            <h3 className="text-sm font-medium text-slate-700 mb-2">Retrieval (Chat & API)</h3>
+            <div className="mb-2">
+              <label className="label">Mode</label>
+              <select
+                value={kbRetrieverMode}
+                onChange={(e) => setKbRetrieverMode(e.target.value as "hybrid" | "vector_only")}
+                className="input w-full"
+              >
+                <option value="hybrid">Standard (hybrid) — best recall, keyword + vector</option>
+                <option value="vector_only">Fast (vector only) — faster, semantic search only</option>
+              </select>
+              <p className="mt-1 text-xs text-slate-500">
+                {kbRetrieverMode === "vector_only"
+                  ? "Skips keyword scan; same answer quality for most queries, lower latency."
+                  : "Searches by keywords and vectors for maximum recall."}
+              </p>
+            </div>
+          </div>
+          <div className="border-t border-[var(--border)] pt-3">
             <h3 className="text-sm font-medium text-slate-700 mb-2">Default Chunking & Embedding (optional)</h3>
             <RagConfigForm
               value={kbConfig}
@@ -510,6 +534,25 @@ export default function KnowledgePage() {
             />
           </div>
           <div className="border-t border-[var(--border)] pt-3">
+            <h3 className="text-sm font-medium text-slate-700 mb-2">Retrieval (Chat & API)</h3>
+            <div className="mb-2">
+              <label className="label">Mode</label>
+              <select
+                value={editKbRetrieverMode}
+                onChange={(e) => setEditKbRetrieverMode(e.target.value as "hybrid" | "vector_only")}
+                className="input w-full"
+              >
+                <option value="hybrid">Standard (hybrid) — best recall, keyword + vector</option>
+                <option value="vector_only">Fast (vector only) — faster, semantic search only</option>
+              </select>
+              <p className="mt-1 text-xs text-slate-500">
+                {editKbRetrieverMode === "vector_only"
+                  ? "Skips keyword scan; same answer quality for most queries, lower latency."
+                  : "Searches by keywords and vectors for maximum recall."}
+              </p>
+            </div>
+          </div>
+          <div className="border-t border-[var(--border)] pt-3">
             <h3 className="text-sm font-medium text-slate-700 mb-2">Default Chunking & Embedding</h3>
             <RagConfigForm
               value={editKbConfig}
@@ -583,6 +626,9 @@ export default function KnowledgePage() {
                               embedding_model: (c.embedding_model as string) || "all-MiniLM-L6-v2",
                               embedding_query_prefix: (c.embedding_query_prefix as string) ?? "",
                             });
+                            setEditKbRetrieverMode(
+                              (c.retriever_mode as "hybrid" | "vector_only") === "vector_only" ? "vector_only" : "hybrid"
+                            );
                             setEditKbPresetId("");
                           }}
                           title="Edit"

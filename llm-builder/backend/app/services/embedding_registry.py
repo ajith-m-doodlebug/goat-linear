@@ -69,6 +69,11 @@ def encode_query(query: str, model_id: str | None = None, query_prefix: str | No
     return model.encode(text).tolist()
 
 
+def warm_embedding_model(model_id: str | None = None) -> None:
+    """Load the embedding model and run one encode so it is cached. Call at startup to avoid first-request spike."""
+    encode_query("warmup", model_id=model_id)
+
+
 def encode_passages(
     texts: list[str],
     model_id: str | None = None,

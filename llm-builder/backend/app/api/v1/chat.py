@@ -1,3 +1,4 @@
+import threading
 import uuid
 from typing import Annotated
 
@@ -8,11 +9,35 @@ from app.db.base import get_db
 from app.models.user import User
 from app.models.chat import ChatSession, ChatMessage
 from app.models.deployment import Deployment
+from app.models.knowledge_base import KnowledgeBase
 from app.models.deployment_version import DeploymentVersion
 from app.core.deps import get_current_user
+from app.schemas.rag_config import resolve_embedding_for_kb
 from app.services.rag import run_rag
+from app.services.embedding_registry import warm_embedding_model
 
 router = APIRouter()
+
+
+def _warm_deployment_embedding_model(deployment_id: str) -> None:
+    """Load the embedding model for this deployment's KB (for first-message speed). Runs in background."""
+    from app.db.base import SessionLocal
+    db = SessionLocal()
+    try:
+        dep = db.query(Deployment).filter(Deployment.id == deployment_id).first()
+        if not dep or not dep.knowledge_base_id:
+            return
+        kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == dep.knowledge_base_id).first()
+        if not kb:
+            return
+        emb = resolve_embedding_for_kb(kb.config)
+        model_id = emb.get("embedding_model")
+        if model_id:
+            warm_embedding_model(model_id)
+    except Exception:
+        pass
+    finally:
+        db.close()
 
 
 @router.post("/sessions")
@@ -37,6 +62,10 @@ def create_session(
     db.add(session)
     db.commit()
     db.refresh(session)
+    # Warm this deployment's KB embedding model in background so first message is fast
+    if dep.knowledge_base_id:
+        t = threading.Thread(target=_warm_deployment_embedding_model, args=(deployment_id,), daemon=True)
+        t.start()
     return {"id": session.id, "deployment_id": deployment_id, "title": session.title}
 
 

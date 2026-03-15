@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -48,6 +49,12 @@ class SetupRequiredMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    # Warm default embedding model so first RAG request does not pay cold-load (~10s)
+    try:
+        from app.services.embedding_registry import warm_embedding_model
+        await asyncio.to_thread(warm_embedding_model)
+    except Exception:
+        pass  # do not block startup if warmup fails (e.g. no network for model download)
     yield
     # shutdown if needed
 
@@ -99,4 +106,4 @@ def ready():
 
 @app.get("/")
 def root():
-    return {"message": "LLM Builder API", "docs": "/docs"}
+    return {"message": "RAGLine API", "docs": "/docs"}

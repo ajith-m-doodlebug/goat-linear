@@ -92,7 +92,7 @@ export default function DashboardLayout({
         <aside className="w-56 flex-shrink-0 border-r border-[var(--border)] bg-[var(--card)] flex flex-col">
           <div className="h-14 flex items-center px-4 border-b border-[var(--border)]">
             <Link href="/dashboard" className="font-semibold text-slate-800 text-lg tracking-tight">
-              LLM Builder
+              RAGLine
             </Link>
           </div>
           <nav className="flex-1 p-3 space-y-6 overflow-y-auto">

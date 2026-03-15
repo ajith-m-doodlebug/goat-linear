@@ -3,7 +3,7 @@ import "./globals.css";
 import { SetupGate } from "@/app/components/SetupGate";
 
 export const metadata: Metadata = {
-  title: "LLM Builder",
+  title: "RAGLine",
   description: "Self-hosted AI infrastructure platform",
 };
 

@@ -279,24 +279,17 @@ def run_rag(
                 emb = resolve_embedding_for_kb(kb.config)
                 embedding_model = emb.get("embedding_model")
                 embedding_query_prefix = emb.get("embedding_query_prefix")
+                retriever_mode = (kb.config or {}).get("retriever_mode") or "hybrid"
                 client = get_qdrant()
-                keywords = question_keywords(question)
+                keywords = question_keywords(question) if retriever_mode == "hybrid" else set()
                 keyword_top_k = min(KEYWORD_TOP_K_MAX, top_k * 2)
 
                 keyword_scored = []
                 vector_results = []
                 fetch = min(top_k * 5, 150)
                 try:
-                    with ThreadPoolExecutor(max_workers=2) as executor:
-                        fut_kw = executor.submit(
-                            _keyword_retrieval,
-                            client,
-                            kb.qdrant_collection_name,
-                            keywords,
-                            keyword_top_k,
-                        )
-                        fut_vec = executor.submit(
-                            _vector_retrieval,
+                    if retriever_mode == "vector_only":
+                        vector_results = _vector_retrieval(
                             client,
                             kb.qdrant_collection_name,
                             question,
@@ -305,8 +298,27 @@ def run_rag(
                             embedding_model=embedding_model,
                             embedding_query_prefix=embedding_query_prefix,
                         )
-                        keyword_scored = fut_kw.result()
-                        vector_results = fut_vec.result()
+                    else:
+                        with ThreadPoolExecutor(max_workers=2) as executor:
+                            fut_kw = executor.submit(
+                                _keyword_retrieval,
+                                client,
+                                kb.qdrant_collection_name,
+                                keywords,
+                                keyword_top_k,
+                            )
+                            fut_vec = executor.submit(
+                                _vector_retrieval,
+                                client,
+                                kb.qdrant_collection_name,
+                                question,
+                                top_k,
+                                fetch,
+                                embedding_model=embedding_model,
+                                embedding_query_prefix=embedding_query_prefix,
+                            )
+                            keyword_scored = fut_kw.result()
+                            vector_results = fut_vec.result()
                 except Exception:
                     pass  # Keep keyword_scored and vector_results (possibly partial) for merge
 

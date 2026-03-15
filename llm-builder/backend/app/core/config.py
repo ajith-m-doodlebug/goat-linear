@@ -4,7 +4,7 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     # App
-    app_name: str = "LLM Builder"
+    app_name: str = "RAGLine"
     debug: bool = False
 
     # Database

@@ -1,4 +1,5 @@
 """Hosted deployment: create version (freeze snapshot), start/stop, and seed Qdrant for hosted API."""
+import threading
 import uuid
 from datetime import datetime, timezone
 
@@ -52,6 +53,7 @@ def _build_frozen_config(
 
     embedding_model = "all-MiniLM-L6-v2"
     embedding_query_prefix = None
+    retriever_mode = "hybrid"
     vector_size = 384
     points_data: list[dict] = []
     has_kb = False
@@ -62,6 +64,7 @@ def _build_frozen_config(
             emb = resolve_embedding_for_kb(kb.config)
             embedding_model = emb.get("embedding_model") or embedding_model
             embedding_query_prefix = emb.get("embedding_query_prefix")
+            retriever_mode = (kb.config or {}).get("retriever_mode") or "hybrid"
             from app.services.embedding_registry import get_vector_size as _get_vs
             vector_size = _get_vs(embedding_model)
             points_data = _get_points_from_collection(kb.qdrant_collection_name)
@@ -76,6 +79,7 @@ def _build_frozen_config(
             "top_k": top_k,
             "embedding_model": embedding_model,
             "embedding_query_prefix": embedding_query_prefix or "",
+            "mode": retriever_mode,
         },
         "has_kb": has_kb,
         "vector_size": vector_size,
@@ -202,6 +206,25 @@ def add_deployment_version(
     return v
 
 
+def _warm_version_embedding_model(version_id: str) -> None:
+    """Load the embedding model for this version's frozen config (for hosted API first-request speed). Runs in background."""
+    from app.db.base import SessionLocal
+    from app.services.embedding_registry import warm_embedding_model
+    db = SessionLocal()
+    try:
+        v = db.query(DeploymentVersion).filter(DeploymentVersion.id == version_id).first()
+        if not v or not v.frozen_config:
+            return
+        retriever = (v.frozen_config or {}).get("retriever") or {}
+        model_id = retriever.get("embedding_model")
+        if model_id:
+            warm_embedding_model(model_id)
+    except Exception:
+        pass
+    finally:
+        db.close()
+
+
 def start_version(db: Session, version_id: str) -> DeploymentVersion:
     """Set this version to running (and deployment.live_version); stop any other running version."""
     v = db.query(DeploymentVersion).filter(DeploymentVersion.id == version_id).first()
@@ -221,6 +244,10 @@ def start_version(db: Session, version_id: str) -> DeploymentVersion:
         dep.live_version = version_id
     db.commit()
     db.refresh(v)
+    # Warm this version's embedding model so first hosted API request is fast
+    if v.frozen_config and (v.frozen_config.get("retriever") or {}).get("embedding_model"):
+        t = threading.Thread(target=_warm_version_embedding_model, args=(version_id,), daemon=True)
+        t.start()
     return v
 
 

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>RAG request timing (from console logs)</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; padding: 1.5rem; max-width: 900px; margin: 0 auto; background: #0f172a; color: #e2e8f0; }
+    h1 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+    .meta { font-size: 0.875rem; color: #94a3b8; margin-bottom: 1.5rem; }
+    .total { font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: #38bdf8; }
+    .chart { margin-bottom: 0.5rem; }
+    .row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; min-height: 2rem; }
+    .label { width: 180px; font-size: 0.8125rem; flex-shrink: 0; }
+    .bar-wrap { flex: 1; height: 24px; background: #1e293b; border-radius: 4px; overflow: hidden; position: relative; }
+    .bar { height: 100%; border-radius: 4px; min-width: 2px; }
+    .bar.api        { background: #64748b; }
+    .bar.retrieval  { background: #f59e0b; }
+    .bar.context    { background: #8b5cf6; }
+    .bar.prompt     { background: #06b6d4; }
+    .bar.llm        { background: #22c55e; }
+    .bar.return_    { background: #64748b; }
+    .ms { width: 64px; text-align: right; font-size: 0.8125rem; color: #94a3b8; flex-shrink: 0; }
+    .pct { width: 48px; text-align: right; font-size: 0.75rem; color: #64748b; flex-shrink: 0; }
+    .scale { display: flex; gap: 0.75rem; margin-left: 180px; font-size: 0.7rem; color: #64748b; margin-top: 0.25rem; }
+    .scale span { flex: 1; }
+    .note { margin-top: 1.5rem; padding: 0.75rem; background: #1e293b; border-radius: 6px; font-size: 0.8125rem; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <h1>RAG request timing</h1>
+  <p class="meta">From console logs: 2026-03-15T19:46:59.032Z → 19:47:15.378Z (one Chat request)</p>
+  <p class="total">Total: 16.35 s (question_received → answer_ready_returning)</p>
+
+  <div class="chart">
+    <div class="row">
+      <span class="label">chat_api → run_rag</span>
+      <div class="bar-wrap"><div class="bar api" id="b0" style="width: 0%"></div></div>
+      <span class="ms" id="m0">4 ms</span>
+      <span class="pct" id="p0">0%</span>
+    </div>
+    <div class="row">
+      <span class="label">Retrieval (keyword + vector)</span>
+      <div class="bar-wrap"><div class="bar retrieval" id="b1" style="width: 0%"></div></div>
+      <span class="ms" id="m1">10.19 s</span>
+      <span class="pct" id="p1">62%</span>
+    </div>
+    <div class="row">
+      <span class="label">Context built (merge + expand)</span>
+      <div class="bar-wrap"><div class="bar context" id="b2" style="width: 0%"></div></div>
+      <span class="ms" id="m2">22 ms</span>
+      <span class="pct" id="p2">0%</span>
+    </div>
+    <div class="row">
+      <span class="label">Prompt build</span>
+      <div class="bar-wrap"><div class="bar prompt" id="b3" style="width: 0%"></div></div>
+      <span class="ms" id="m3">12 ms</span>
+      <span class="pct" id="p3">0%</span>
+    </div>
+    <div class="row">
+      <span class="label">LLM call (Anthropic)</span>
+      <div class="bar-wrap"><div class="bar llm" id="b4" style="width: 0%"></div></div>
+      <span class="ms" id="m4">6.10 s</span>
+      <span class="pct" id="p4">37%</span>
+    </div>
+    <div class="row">
+      <span class="label">Return to API</span>
+      <div class="bar-wrap"><div class="bar return_" id="b5" style="width: 0%"></div></div>
+      <span class="ms" id="m5">21 ms</span>
+      <span class="pct" id="p5">0%</span>
+    </div>
+  </div>
+
+  <div class="scale">
+    <span>0</span>
+    <span>4s</span>
+    <span>8s</span>
+    <span>12s</span>
+    <span>16s</span>
+  </div>
+
+  <div class="note">
+    <strong>Note:</strong> Most of “Retrieval” time in this run was loading the embedding model (SentenceTransformer all-MiniLM-L6-v2) from Hugging Face on first use (~10 s). Subsequent requests will have much shorter retrieval (Qdrant scroll + vector query + encode). LLM call is external (Anthropic) and dominates after cold start.
+  </div>
+
+  <script>
+    const totalMs = 16346;
+    const phases = [
+      { ms: 4,    id: 0 },
+      { ms: 10190, id: 1 },
+      { ms: 22,   id: 2 },
+      { ms: 12,   id: 3 },
+      { ms: 6101, id: 4 },
+      { ms: 21,   id: 5 },
+    ];
+    phases.forEach(p => {
+      const bar = document.getElementById('b' + p.id);
+      const w = totalMs ? (p.ms / totalMs * 100) : 0;
+      bar.style.width = Math.max(w, 0.5) + '%'; // at least 0.5% so tiny phases are visible
+    });
+  </script>
+</body>
+</html>

@@ -36,6 +36,7 @@ def run_hosted_rag(
     embedding_query_prefix = retriever.get("embedding_query_prefix") or ""
     if isinstance(embedding_query_prefix, str):
         embedding_query_prefix = embedding_query_prefix.strip() or None
+    retriever_mode = retriever.get("mode") or "hybrid"
     has_kb = cfg.get("has_kb", False)
     collection_name = f"hosted_{version.id}"
 
@@ -49,21 +50,13 @@ def run_hosted_rag(
             if not any(c.name == collection_name for c in collections):
                 pass
             else:
-                keywords = question_keywords(question)
+                keywords = question_keywords(question) if retriever_mode == "hybrid" else set()
                 keyword_top_k = min(KEYWORD_TOP_K_MAX, top_k * 2)
                 fetch = min(top_k * 5, 150)
                 keyword_scored = []
                 vector_results = []
-                with ThreadPoolExecutor(max_workers=2) as executor:
-                    fut_kw = executor.submit(
-                        _keyword_retrieval,
-                        client,
-                        collection_name,
-                        keywords,
-                        keyword_top_k,
-                    )
-                    fut_vec = executor.submit(
-                        _vector_retrieval,
+                if retriever_mode == "vector_only":
+                    vector_results = _vector_retrieval(
                         client,
                         collection_name,
                         question,
@@ -72,8 +65,27 @@ def run_hosted_rag(
                         embedding_model=embedding_model,
                         embedding_query_prefix=embedding_query_prefix,
                     )
-                    keyword_scored = fut_kw.result()
-                    vector_results = fut_vec.result()
+                else:
+                    with ThreadPoolExecutor(max_workers=2) as executor:
+                        fut_kw = executor.submit(
+                            _keyword_retrieval,
+                            client,
+                            collection_name,
+                            keywords,
+                            keyword_top_k,
+                        )
+                        fut_vec = executor.submit(
+                            _vector_retrieval,
+                            client,
+                            collection_name,
+                            question,
+                            top_k,
+                            fetch,
+                            embedding_model=embedding_model,
+                            embedding_query_prefix=embedding_query_prefix,
+                        )
+                        keyword_scored = fut_kw.result()
+                        vector_results = fut_vec.result()
                 if keyword_scored or vector_results:
                     context_parts, citations, payloads = _merge_and_take_top_k(
                         keyword_scored,
