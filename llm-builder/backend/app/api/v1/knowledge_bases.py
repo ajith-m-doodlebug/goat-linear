@@ -20,6 +20,7 @@ from app.workers.ingest import run_ingest
 from app.services.qdrant_client import get_qdrant
 from app.schemas.rag_config import resolve_embedding_for_kb
 from app.services.embedding_registry import encode_query as encode_query_with_model
+from datetime import timezone
 
 router = APIRouter()
 
@@ -36,6 +37,21 @@ def _safe_basename(filename: str) -> str:
     return name or "document"
 
 
+def _format_utc(dt) -> str:
+    """Format a datetime as an ISO 8601 UTC string with Z suffix."""
+    if not dt:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    # Ensure trailing 'Z' for UTC
+    s = dt.isoformat()
+    if s.endswith("+00:00"):
+        s = s[:-6] + "Z"
+    return s
+
+
 def _kb_to_response(kb: KnowledgeBase) -> KnowledgeBaseResponse:
     config = getattr(kb, "config", None)
     if config is not None and not isinstance(config, dict):
@@ -46,7 +62,7 @@ def _kb_to_response(kb: KnowledgeBase) -> KnowledgeBaseResponse:
         description=kb.description,
         qdrant_collection_name=kb.qdrant_collection_name,
         config=config,
-        created_at=kb.created_at.isoformat() if kb.created_at else "",
+        created_at=_format_utc(kb.created_at),
     )
 
 
@@ -62,7 +78,7 @@ def _doc_to_response(doc: Document) -> DocumentResponse:
         status=doc.status,
         error_message=doc.error_message,
         config=config,
-        created_at=doc.created_at.isoformat() if doc.created_at else "",
+        created_at=_format_utc(doc.created_at),
     )
 
 
