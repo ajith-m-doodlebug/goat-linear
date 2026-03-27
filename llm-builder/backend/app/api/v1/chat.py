@@ -14,6 +14,7 @@ from app.models.deployment_version import DeploymentVersion
 from app.core.deps import get_current_user
 from app.schemas.rag_config import resolve_embedding_for_kb
 from app.services.rag import run_rag
+from app.services.chat_attachments import validate_images_from_body
 from app.services.embedding_registry import warm_embedding_model
 
 router = APIRouter()
@@ -130,7 +131,14 @@ def get_messages(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     messages = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at).all()
     return [
-        {"id": m.id, "role": m.role, "content": m.content, "citations": m.citations, "created_at": m.created_at.isoformat() if m.created_at else ""}
+        {
+            "id": m.id,
+            "role": m.role,
+            "content": m.content,
+            "attachments": m.attachments,
+            "citations": m.citations,
+            "created_at": m.created_at.isoformat() if m.created_at else "",
+        }
         for m in messages
     ]
 
@@ -142,13 +150,20 @@ def send_message(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Body: { content: string }. Runs RAG, saves user + assistant message, returns response and citations."""
+    """Body: { content?: string, images?: [{ media_type, data }] }. Runs RAG, saves messages, returns response."""
     session = db.query(ChatSession).filter(ChatSession.id == session_id, ChatSession.user_id == user.id).first()
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     content = (body.get("content") or "").strip()
-    if not content:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="content required")
+    try:
+        images = validate_images_from_body(body.get("images"))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    if not content and not images:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="content or images required",
+        )
 
     # Load last N turns for memory (from deployment's live version frozen_config or default)
     dep = db.query(Deployment).filter(Deployment.id == session.deployment_id).first()
@@ -163,9 +178,18 @@ def send_message(
     past = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at.desc()).limit(memory_turns * 2).all()
     chat_history = [{"role": m.role, "content": m.content} for m in reversed(past)]
 
-    response_text, citations = run_rag(session.deployment_id, content, chat_history=chat_history)
+    response_text, citations = run_rag(
+        session.deployment_id, content, chat_history=chat_history, images=images or None
+    )
 
-    user_msg = ChatMessage(id=str(uuid.uuid4()), session_id=session_id, role="user", content=content)
+    user_content = content if content else ""
+    user_msg = ChatMessage(
+        id=str(uuid.uuid4()),
+        session_id=session_id,
+        role="user",
+        content=user_content,
+        attachments=images if images else None,
+    )
     assistant_msg = ChatMessage(id=str(uuid.uuid4()), session_id=session_id, role="assistant", content=response_text, citations=citations)
     db.add(user_msg)
     db.add(assistant_msg)

@@ -9,12 +9,29 @@ import { Card } from "@/app/components/ui/Card";
 import { Button } from "@/app/components/ui/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState";
 import { Modal } from "@/app/components/ui/Modal";
-import { MoreVerticalIcon } from "@/app/components/ui";
+import { MoreVerticalIcon, PaperclipIcon } from "@/app/components/ui";
+
+const MAX_IMAGES = 4;
 
 type Deployment = { id: string; name: string };
 type Session = { id: string; deployment_id: string; title: string; updated_at: string };
 type Citation = { text: string; source: string; score: number };
-type Message = { id: string; role: string; content: string; citations: Citation[] | null; created_at: string };
+type ImageAttachment = { type?: string; media_type: string; data: string };
+type Message = {
+  id: string;
+  role: string;
+  content: string;
+  citations: Citation[] | null;
+  created_at: string;
+  attachments?: ImageAttachment[] | null;
+};
+type PendingImage = { id: string; previewUrl: string; media_type: string; data: string };
+
+function parseDataUrl(result: string): { media_type: string; data: string; previewUrl: string } | null {
+  const m = result.match(/^data:([^;]+);base64,(.+)$/);
+  if (!m) return null;
+  return { media_type: m[1], data: m[2], previewUrl: result };
+}
 
 export default function ChatPage() {
   const searchParams = useSearchParams();
@@ -32,6 +49,8 @@ export default function ChatPage() {
   const [newChatDeploymentId, setNewChatDeploymentId] = useState("");
   const [menuSessionId, setMenuSessionId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [renameSession, setRenameSession] = useState<Session | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
 
@@ -161,20 +180,66 @@ export default function ChatPage() {
     }
   };
 
+  const onPickFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length) return;
+    const remaining = MAX_IMAGES - pendingImages.length;
+    const toRead = Array.from(files).slice(0, Math.max(0, remaining));
+    const next: PendingImage[] = [];
+    for (const file of toRead) {
+      if (!file.type.startsWith("image/")) continue;
+      try {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result as string);
+          r.onerror = () => reject(r.error);
+          r.readAsDataURL(file);
+        });
+        const parsed = parseDataUrl(dataUrl);
+        if (parsed) next.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, ...parsed });
+      } catch {
+        /* skip unreadable file */
+      }
+    }
+    if (next.length) setPendingImages((p) => [...p, ...next]);
+    e.target.value = "";
+  };
+
   const send = async (e?: React.FormEvent<HTMLFormElement>) => {
     e?.preventDefault();
-    if (!currentSession || !input.trim() || sending) return;
+    if (!currentSession || sending) return;
     const content = input.trim();
+    const imagesPayload = pendingImages.map(({ media_type, data }) => ({ media_type, data }));
+    if (!content && imagesPayload.length === 0) return;
+    const attachmentsForUi: ImageAttachment[] = pendingImages.map((p) => ({
+      type: "image",
+      media_type: p.media_type,
+      data: p.data,
+    }));
     setInput("");
+    setPendingImages([]);
     setSending(true);
     setMessages((prev: Message[]) => [
       ...prev,
-      { id: "u-" + Date.now(), role: "user", content, citations: null, created_at: new Date().toISOString() },
+      {
+        id: "u-" + Date.now(),
+        role: "user",
+        content,
+        attachments: attachmentsForUi.length ? attachmentsForUi : null,
+        citations: null,
+        created_at: new Date().toISOString(),
+      },
     ]);
     try {
       const res = await apiRequest<{ response: string; citations: { text: string; source: string; score: number }[] }>(
         `/api/v1/chat/sessions/${currentSession.id}/messages`,
-        { method: "POST", body: JSON.stringify({ content }) }
+        {
+          method: "POST",
+          body: JSON.stringify({
+            content,
+            ...(imagesPayload.length ? { images: imagesPayload } : {}),
+          }),
+        }
       );
       setMessages((prev: Message[]) => [
         ...prev,
@@ -335,6 +400,24 @@ export default function ChatPage() {
                       }`}
                     >
                       <div className="whitespace-pre-wrap text-sm">{m.content}</div>
+                      {m.attachments && m.attachments.length > 0 && (
+                        <div
+                          className={`flex flex-wrap gap-2 mt-2 ${
+                            m.role === "user" ? "" : "mt-1"
+                          }`}
+                        >
+                          {m.attachments.map((att: ImageAttachment, idx: number) => (
+                            <img
+                              key={idx}
+                              src={`data:${att.media_type};base64,${att.data}`}
+                              alt=""
+                              className={`max-h-40 rounded-md object-contain border ${
+                                m.role === "user" ? "border-white/30" : "border-slate-200"
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      )}
                       {m.citations && m.citations.length > 0 && (
                         <details
                           className={`mt-2 text-xs ${m.role === "user" ? "text-brand-100" : "text-slate-600"}`}
@@ -368,23 +451,71 @@ export default function ChatPage() {
                 )}
                 <div ref={messagesEndRef} />
               </div>
-              <form onSubmit={send} className="p-4 border-t border-[var(--border)] flex gap-2">
-                <textarea
-                  value={input}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
-                  placeholder="Type a message..."
-                  rows={2}
-                  className="input flex-1 resize-none"
-                  onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      send();
-                    }
-                  }}
+              <form onSubmit={send} className="p-4 border-t border-[var(--border)] flex flex-col gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  aria-hidden
+                  onChange={onPickFiles}
                 />
-                <Button type="submit" variant="primary" disabled={sending} className="self-end">
-                  {sending ? "…" : "Send"}
-                </Button>
+                {pendingImages.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {pendingImages.map((p) => (
+                      <div key={p.id} className="relative group">
+                        <img
+                          src={p.previewUrl}
+                          alt=""
+                          className="h-16 w-16 object-cover rounded-md border border-[var(--border)]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setPendingImages((prev) => prev.filter((x) => x.id !== p.id))}
+                          className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-slate-800 text-white text-xs leading-5 opacity-90 hover:opacity-100"
+                          aria-label="Remove image"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={sending || pendingImages.length >= MAX_IMAGES}
+                    className="self-end px-3 shrink-0"
+                    title={`Attach images (max ${MAX_IMAGES})`}
+                    aria-label="Attach images"
+                  >
+                    <PaperclipIcon className="w-4 h-4" />
+                  </Button>
+                  <textarea
+                    value={input}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
+                    placeholder="Type a message…"
+                    rows={2}
+                    className="input flex-1 resize-none"
+                    onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        send();
+                      }
+                    }}
+                  />
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    disabled={sending || (!input.trim() && pendingImages.length === 0)}
+                    className="self-end"
+                  >
+                    {sending ? "…" : "Send"}
+                  </Button>
+                </div>
               </form>
             </>
           ) : (

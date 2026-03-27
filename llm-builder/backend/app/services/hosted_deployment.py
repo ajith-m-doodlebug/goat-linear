@@ -350,12 +350,17 @@ def add_hosted_session_messages(
     deployment_id: str,
     version_id: str,
     session_id: str,
-    messages: list[tuple[str, str]],
+    messages: list[tuple[str, str, list | None]],
     max_messages: int = 100,
 ) -> None:
-    """Append (role, content) messages for this session; trim oldest if over max_messages."""
+    """Append (role, content, attachments?) messages; trim oldest if over max_messages."""
     from app.models.hosted_session_message import HostedSessionMessage
-    for role, content in messages:
+    for row in messages:
+        if len(row) == 2:
+            role, content = row[0], row[1]
+            attachments = None
+        else:
+            role, content, attachments = row[0], row[1], row[2]
         m = HostedSessionMessage(
             id=str(uuid.uuid4()),
             deployment_id=deployment_id,
@@ -363,6 +368,7 @@ def add_hosted_session_messages(
             session_id=session_id,
             role=role,
             content=content or "",
+            attachments=attachments,
         )
         db.add(m)
     db.commit()

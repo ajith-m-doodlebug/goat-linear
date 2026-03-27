@@ -5,7 +5,7 @@ export default function HomePage() {
     <div className="min-h-screen flex flex-col items-center justify-center p-8 bg-[var(--background)]">
       <div className="text-center max-w-md">
         <h1 className="text-3xl font-bold text-slate-800 tracking-tight mb-2">RAGLine</h1>
-        <p className="text-slate-600 mb-8">Self-hosted AI: documents, models, RAG, and chat in one place.</p>
+        <p className="text-slate-600 mb-8">On-prem AI: documents, models, RAG, and chat in one place.</p>
         <div className="flex gap-3 justify-center flex-wrap">
           <Link
             href="/login"

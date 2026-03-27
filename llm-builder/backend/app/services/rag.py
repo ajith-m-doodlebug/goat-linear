@@ -10,7 +10,7 @@ from app.models.prompt_template import PromptTemplate
 from app.services.qdrant_client import get_qdrant
 from app.services.embedding_registry import encode_query as encode_query_with_model
 from app.schemas.rag_config import resolve_embedding_for_kb
-from app.services.llm_client import complete
+from app.services.llm_client import complete, complete_with_images
 from app.services.keywords import question_keywords, chunk_contains_any_keyword
 
 # Cap for keyword-only path; prefer chunks that match more question keywords.
@@ -255,10 +255,12 @@ def run_rag(
     deployment_id: str,
     question: str,
     chat_history: list[dict] | None = None,
+    images: list[dict] | None = None,
 ) -> tuple[str, list[dict]]:
     """
     Hybrid RAG: (1) Keyword-first pass over full KB so no fact is missed.
     (2) Vector search + keyword re-rank for relevance. (3) Merge, dedupe, prompt, generate.
+    images: optional list of {media_type, data} for vision models (validated upstream).
     """
     db = SessionLocal()
     try:
@@ -268,6 +270,8 @@ def run_rag(
         model = db.query(ModelRegistry).filter(ModelRegistry.id == dep.model_id).first()
         if not model:
             raise ValueError("Model not found")
+
+        question = (question or "").strip()
 
         context_parts = []
         citations = []
@@ -362,7 +366,10 @@ def run_rag(
             prompt = memory_block + DEFAULT_RAG_PROMPT.format(context=context, question=question)
 
         try:
-            response_text = complete(model, prompt)
+            if images:
+                response_text = complete_with_images(model, prompt, images)
+            else:
+                response_text = complete(model, prompt)
         except Exception as e:
             err_msg = str(e)
             response_text = "Error generating response: " + err_msg

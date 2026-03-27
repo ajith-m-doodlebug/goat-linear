@@ -2,9 +2,9 @@
 No auth required; these are public API endpoints for the deployed RAG."""
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Any, Optional
 
 from app.db.base import get_db
 from app.models.deployment_version import DeploymentVersion
@@ -14,6 +14,7 @@ from app.services.hosted_deployment import (
     add_hosted_session_messages,
 )
 from app.services.hosted_chat import run_hosted_rag
+from app.services.chat_attachments import extract_question_and_images_from_openai_content
 
 router = APIRouter()
 
@@ -23,8 +24,10 @@ def _get_running_version(db: Session, deployment_id: str) -> DeploymentVersion |
 
 
 class ChatMessage(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     role: str
-    content: str | None = None
+    content: str | list[Any] | None = None
 
 
 class ChatCompletionRequest(BaseModel):
@@ -67,11 +70,19 @@ def hosted_chat_completions(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
     question = ""
-    for m in reversed(body.messages or []):
-        if m.role == "user" and (m.content or "").strip():
-            question = (m.content or "").strip()
-            break
-    if not question:
+    images_out: list[dict] = []
+    try:
+        for m in reversed(body.messages or []):
+            if (m.role or "").lower() != "user":
+                continue
+            q, imgs = extract_question_and_images_from_openai_content(m.content)
+            if q or imgs:
+                question = q
+                images_out = imgs
+                break
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    if not question and not images_out:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No user message found")
 
     session_id = body.session_id or x_session_id
@@ -82,16 +93,23 @@ def hosted_chat_completions(
         chat_history = get_hosted_session_messages(db, deployment_id, v.id, session_id, limit=memory_turns)
 
     # Use only the running version's frozen config (frozen KB snapshot, model, prompt)
-    response_text, citations = run_hosted_rag(v, question, chat_history=chat_history)
+    response_text, citations = run_hosted_rag(
+        v, question, chat_history=chat_history, images=images_out or None
+    )
 
     if memory_enabled and session_id:
-        user_content = question
+        user_content = question.strip() if question else ""
+        if not user_content and images_out:
+            user_content = f"[{len(images_out)} image(s)]"
         add_hosted_session_messages(
             db,
             deployment_id,
             v.id,
             session_id,
-            [("user", user_content), ("assistant", response_text)],
+            [
+                ("user", user_content, images_out or None),
+                ("assistant", response_text, None),
+            ],
             max_messages=memory_turns * 4,
         )
 

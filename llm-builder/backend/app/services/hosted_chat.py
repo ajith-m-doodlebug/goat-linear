@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from app.models.deployment_version import DeploymentVersion
 from app.services.qdrant_client import get_qdrant
-from app.services.llm_client import complete_from_frozen_config
+from app.services.llm_client import complete_from_frozen_config, complete_from_frozen_config_with_images
 from app.services.rag import (
     DEFAULT_RAG_PROMPT,
     KEYWORD_TOP_K_MAX,
@@ -19,6 +19,7 @@ def run_hosted_rag(
     version: DeploymentVersion,
     question: str,
     chat_history: list[dict] | None = None,
+    images: list[dict] | None = None,
 ) -> tuple[str, list[dict]]:
     """
     Run retrieval and LLM completion using the version's frozen config only.
@@ -28,6 +29,8 @@ def run_hosted_rag(
     Returns (response_text, citations).
     """
     cfg = version.frozen_config or {}
+    question = (question or "").strip()
+
     model_cfg = cfg.get("model") or {}
     retriever = cfg.get("retriever") or {}
     prompt_template = cfg.get("prompt") or DEFAULT_RAG_PROMPT
@@ -119,7 +122,11 @@ def run_hosted_rag(
         prompt = memory_block + prompt_template.replace("{context}", context).replace("{question}", question)
 
     try:
-        response_text = complete_from_frozen_config(model_cfg, prompt, **(cfg.get("model") or {}).get("extra") or {})
+        extra = (cfg.get("model") or {}).get("extra") or {}
+        if images:
+            response_text = complete_from_frozen_config_with_images(model_cfg, prompt, images, **extra)
+        else:
+            response_text = complete_from_frozen_config(model_cfg, prompt, **extra)
     except Exception as e:
         response_text = "Error generating response: " + str(e)
     return response_text, citations

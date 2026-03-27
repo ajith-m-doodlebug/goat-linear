@@ -4,7 +4,7 @@ import { SetupGate } from "@/app/components/SetupGate";
 
 export const metadata: Metadata = {
   title: "RAGLine",
-  description: "Self-hosted AI infrastructure platform",
+  description: "On-prem AI infrastructure platform",
 };
 
 export default function RootLayout({

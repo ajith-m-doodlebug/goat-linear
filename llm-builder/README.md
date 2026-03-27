@@ -1,6 +1,6 @@
 # LLM Builder On-Premise
 
-Fully self-hosted AI infrastructure platform: data ingestion, RAG, fine-tuning, model registry, deployments, and chat with enterprise governance.
+Fully on-premises AI infrastructure platform: data ingestion, RAG, fine-tuning, model registry, deployments, and chat with enterprise governance.
 
 ## Stack
 

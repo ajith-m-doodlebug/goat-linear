@@ -61,7 +61,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    description="Self-hosted AI infrastructure: RAG, fine-tuning, deployments, chat.",
+    description="On-prem AI infrastructure: RAG, fine-tuning, deployments, chat.",
     version="0.1.0",
     lifespan=lifespan,
 )

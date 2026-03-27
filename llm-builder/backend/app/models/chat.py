@@ -23,5 +23,6 @@ class ChatMessage(Base):
     session_id = Column(String(36), ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     role = Column(String(32), nullable=False)  # user, assistant
     content = Column(Text, nullable=False)
+    attachments = Column(JSONB, nullable=True)  # e.g. [{type, media_type, data}] base64 images
     citations = Column(JSONB, nullable=True)  # list of {text, source, score}
     created_at = Column(DateTime, default=datetime.utcnow)
