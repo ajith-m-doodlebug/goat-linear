@@ -1,3 +1,4 @@
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -5,8 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.db.base import get_db
 from app.models.user import User, Role
-from app.schemas.user import UserResponse, UserUpdate
+from app.models.system_settings import SystemSettings
+from app.schemas.user import UserCreateBySuperAdmin, UserResponse, UserUpdate
 from app.core.deps import get_current_user, require_admin, require_super_admin
+from app.core.security import get_password_hash
 
 router = APIRouter()
 
@@ -29,10 +32,43 @@ def _user_to_response(user: User) -> UserResponse:
 @router.get("", response_model=list[UserResponse])
 def list_users(
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_super_admin),
 ):
     users = db.query(User).all()
     return [_user_to_response(u) for u in users]
+
+
+@router.post("", response_model=UserResponse)
+def create_user(
+    body: UserCreateBySuperAdmin,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    if body.role not in ALLOWED_ROLES_FOR_ASSIGNMENT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Role must be admin, developer, or tester",
+        )
+    email = str(body.email).lower().strip()
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+    settings = db.query(SystemSettings).first()
+    default_model_id = settings.default_model_id if settings else None
+    default_prompt_id = settings.default_prompt_id if settings else None
+    user = User(
+        id=str(uuid.uuid4()),
+        email=email,
+        hashed_password=get_password_hash(body.password),
+        full_name=None,
+        role=body.role,
+        is_active=True,
+        default_model_id=default_model_id,
+        default_prompt_id=default_prompt_id,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return _user_to_response(user)
 
 
 @router.get("/me", response_model=UserResponse)
@@ -71,7 +107,6 @@ def update_user(
     if body.default_prompt_id is not None:
         user.default_prompt_id = body.default_prompt_id if body.default_prompt_id else None
     if body.password is not None:
-        from app.core.security import get_password_hash
         user.hashed_password = get_password_hash(body.password)
     # Role can only be changed by super_admin; allowed values: admin, developer, tester
     if body.role is not None:

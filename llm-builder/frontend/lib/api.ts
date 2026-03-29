@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export type TokenResponse = {
@@ -65,9 +67,11 @@ async function refreshAccessToken(): Promise<boolean> {
   return true;
 }
 
+type FetchOptions = NonNullable<Parameters<typeof fetch>[1]>;
+
 export async function apiRequest<T>(
   path: string,
-  options: RequestInit = {}
+  options: FetchOptions = {}
 ): Promise<T> {
   const { accessToken: token } = getStoredTokens();
   const headers: HeadersInit = {
@@ -95,33 +99,11 @@ export async function apiRequest<T>(
   return res.json() as Promise<T>;
 }
 
-export type RegisterWithOtpResponse = {
-  user: UserResponse;
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-};
-
 export const authApi = {
   login: (email: string, password: string) =>
     apiRequest<TokenResponse>("/api/v1/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
-    }),
-  requestOtp: (email: string) =>
-    apiRequest<{ message: string }>("/api/v1/auth/request-otp", {
-      method: "POST",
-      body: JSON.stringify({ email }),
-    }),
-  registerWithOtp: (
-    email: string,
-    otp: string,
-    password: string,
-    full_name?: string
-  ) =>
-    apiRequest<RegisterWithOtpResponse>("/api/v1/auth/register", {
-      method: "POST",
-      body: JSON.stringify({ email, otp, password, full_name }),
     }),
   refresh: (refresh_token: string) =>
     apiRequest<TokenResponse>("/api/v1/auth/refresh", {
@@ -134,23 +116,50 @@ export const authApi = {
 export type SetupStatusResponse = { setup_completed: boolean };
 
 export const setupApi = {
-  getStatus: (): Promise<SetupStatusResponse> =>
-    fetch(`${API_BASE}/api/v1/setup/status`)
-      .then((r) => r.json())
-      .then((data) => data as SetupStatusResponse),
+  getStatus: async (): Promise<SetupStatusResponse> => {
+    const r = await fetch(`${API_BASE}/api/v1/setup/status`);
+    if (!r.ok) {
+      throw new Error(`setup status HTTP ${r.status}`);
+    }
+    const data = (await r.json()) as SetupStatusResponse;
+    if (typeof data.setup_completed !== "boolean") {
+      throw new Error("setup status: invalid response");
+    }
+    return data;
+  },
   runSetup: (body: {
     super_admin_email: string;
     password: string;
-    company_name: string;
-    allowed_email_domain: string;
-    setup_default_prompts_and_models: boolean;
+    setup_default_prompt: boolean;
   }) =>
     fetch(`${API_BASE}/api/v1/setup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).then((r) => {
-      if (!r.ok) return r.json().then((err) => { throw new Error(err.detail || "Setup failed"); });
+      if (!r.ok) {
+        return r.json().then((err) => {
+          const d = err.detail;
+          const msg =
+            typeof d === "string"
+              ? d
+              : Array.isArray(d)
+                ? d.map((x: { msg?: string }) => x.msg).filter(Boolean).join(", ")
+                : "Setup failed";
+          throw new Error(msg || "Setup failed");
+        });
+      }
       return r.json();
     }),
 };
+
+export async function createUserAsSuperAdmin(body: {
+  email: string;
+  password: string;
+  role: string;
+}): Promise<UserResponse> {
+  return apiRequest<UserResponse>("/api/v1/users", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}

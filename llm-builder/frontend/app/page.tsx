@@ -9,15 +9,9 @@ export default function HomePage() {
         <div className="flex gap-3 justify-center flex-wrap">
           <Link
             href="/login"
-            className="inline-flex items-center justify-center px-5 py-2.5 rounded-[var(--radius)] font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 transition-colors"
-          >
-            Log in
-          </Link>
-          <Link
-            href="/register"
             className="inline-flex items-center justify-center px-5 py-2.5 rounded-[var(--radius)] font-medium text-white bg-brand-600 hover:bg-brand-700 transition-colors"
           >
-            Sign up
+            Log in
           </Link>
         </div>
       </div>

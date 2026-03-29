@@ -9,7 +9,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# PyPI torch on Linux arm64 pulls CUDA/cuDNN/triton (~1.3GB+); containers here are CPU-only.
+# Install torch from PyTorch's CPU index first so `pip install -r` does not download NVIDIA wheels.
+ENV PIP_DEFAULT_TIMEOUT=600
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --retries 10 torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir --retries 10 -r requirements.txt
 
 COPY . .
 ENV PYTHONPATH=/app

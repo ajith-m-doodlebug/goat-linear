@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authApi, setTokens } from "@/lib/api";
 import { Card, CardBody } from "@/app/components/ui/Card";
@@ -63,7 +62,7 @@ export default function LoginPage() {
               {loading ? "Signing in…" : "Sign in"}
             </Button>
             <p className="text-sm text-slate-600 text-center">
-              No account? <Link href="/register" className="text-brand-600 font-medium hover:underline">Sign up</Link>
+              Need an account? Ask your administrator to create one for you.
             </p>
           </form>
         </CardBody>

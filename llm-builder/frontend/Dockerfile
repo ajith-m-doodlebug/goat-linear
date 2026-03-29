@@ -1,20 +1,30 @@
-FROM node:20-alpine AS base
+# bookworm-slim (glibc): Next.js SWC on linux/arm64 fails on Alpine/musl (gnu binary symbol errors, musl optional often missing).
+FROM node:20-bookworm-slim AS base
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install
 COPY . .
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-# Dev stage: deps only, no build; use with volume mount and `npm run dev`
-# On startup we run npm install so the mounted node_modules volume is populated (empty on first run).
-FROM node:20-alpine AS dev
-WORKDIR /app
+# Dev stage: Linux npm ci baked at /built-deps; entrypoint copies into mounted volume when lock matches
+# (avoids broken trees from npm install inside the volume). If lock differs from image, runs npm ci at start.
+FROM node:20-bookworm-slim AS dev
+WORKDIR /built-deps
 COPY package.json package-lock.json* ./
+RUN npm ci --no-audit --no-fund \
+  && sha256sum package-lock.json | awk '{print $1}' > /built-deps/.lock-sha
+
+WORKDIR /app
+COPY docker-entrypoint-dev.sh /usr/local/bin/docker-entrypoint-dev.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint-dev.sh
+ENV NODE_ENV=development
 EXPOSE 3000
 ENV PORT=3000
-CMD ["sh", "-c", "npm install && exec npm run dev"]
+ENTRYPOINT ["docker-entrypoint-dev.sh"]
+CMD ["npm", "run", "dev"]
 
-FROM node:20-alpine AS runner
+FROM node:20-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=base /app/.next/standalone ./

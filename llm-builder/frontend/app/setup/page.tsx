@@ -11,9 +11,7 @@ export default function SetupPage() {
   const [checking, setChecking] = useState(true);
   const [superAdminEmail, setSuperAdminEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [companyName, setCompanyName] = useState("");
-  const [allowedEmailDomain, setAllowedEmailDomain] = useState("");
-  const [setupDefaults, setSetupDefaults] = useState(true);
+  const [setupDefaultPrompt, setSetupDefaultPrompt] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -38,9 +36,7 @@ export default function SetupPage() {
       await setupApi.runSetup({
         super_admin_email: superAdminEmail,
         password,
-        company_name: companyName,
-        allowed_email_domain: allowedEmailDomain.trim(),
-        setup_default_prompts_and_models: setupDefaults,
+        setup_default_prompt: setupDefaultPrompt,
       });
       router.replace("/login");
       router.refresh();
@@ -66,13 +62,13 @@ export default function SetupPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <h1 className="text-xl font-bold text-slate-800">Initial setup</h1>
             <p className="text-sm text-slate-600">
-              Create the super admin account and configure your company. Only users with an email at your company domain will be able to sign up.
+              Create the super admin account. You can add other users later from the Users page after you sign in.
             </p>
             {error && (
               <div className="p-3 rounded-[var(--radius)] bg-red-50 text-red-700 text-sm">{error}</div>
             )}
             <div>
-              <label className="label">Super admin email</label>
+              <label className="label">Email</label>
               <input
                 type="email"
                 value={superAdminEmail}
@@ -92,39 +88,16 @@ export default function SetupPage() {
                 className="input"
               />
             </div>
-            <div>
-              <label className="label">Company name</label>
-              <input
-                type="text"
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-                required
-                className="input"
-                placeholder="Acme Inc"
-              />
-            </div>
-            <div>
-              <label className="label">Allowed email domain (waitlist)</label>
-              <input
-                type="text"
-                value={allowedEmailDomain}
-                onChange={(e) => setAllowedEmailDomain(e.target.value)}
-                required
-                className="input"
-                placeholder="company.com"
-              />
-              <p className="text-xs text-slate-500 mt-1">Only users with an email @{allowedEmailDomain || "company.com"} can create accounts.</p>
-            </div>
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
-                id="setup-defaults"
-                checked={setupDefaults}
-                onChange={(e) => setSetupDefaults(e.target.checked)}
+                id="setup-default-prompt"
+                checked={setupDefaultPrompt}
+                onChange={(e) => setSetupDefaultPrompt(e.target.checked)}
                 className="rounded border-slate-300"
               />
-              <label htmlFor="setup-defaults" className="text-sm text-slate-700">
-                Set up default prompt and model (Server-Ollama + Documentation prompt)
+              <label htmlFor="setup-default-prompt" className="text-sm text-slate-700">
+                Create default &quot;Documentation&quot; prompt template
               </label>
             </div>
             <Button type="submit" variant="primary" disabled={loading} className="w-full">

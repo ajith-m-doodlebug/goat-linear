@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Dev: stop containers. Data volumes are kept.
+# Production: stream logs (Ctrl+C stops following only). Optional: ./logs-prod.sh app web postgres
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/_ragline_common.sh"
 
-ragline_dev down
-echo "[ragline] Dev stack stopped (volumes preserved)."
+ragline_base logs -f "$@"

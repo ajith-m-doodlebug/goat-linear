@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Restore a backup created by setup.sh. Run after setup (./setup.sh) when you want to restore data.
+# Restore a backup created by setup.sh / setup-prod.sh. Run when you want to restore data into a running stack.
 # Usage: ./restore.sh backup/ragline-YYYYMMDD-HHMMSS
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,7 +16,7 @@ usage() {
     [ -d "$d" ] && echo "  $d"
   done
   echo ""
-  echo "Prerequisites: run ./setup.sh first so Postgres and services exist, then run this script."
+  echo "Prerequisites: run ./setup-prod.sh or ./setup.sh so Postgres exists, then run this script."
   exit 1
 }
 

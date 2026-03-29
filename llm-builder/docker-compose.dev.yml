@@ -1,6 +1,4 @@
-# Dev override: mount source and enable reload. Use with:
-#   docker compose -p ragline -f docker-compose.yml -f docker-compose.dev.yml up -d
-# Or: ./start.sh
+# Dev override: bind mounts + --reload + Next dev. Used by ./setup.sh, ./start.sh, ./stop.sh.
 
 name: ragline
 
@@ -30,14 +28,16 @@ services:
     volumes:
       - ./frontend:/app
       - web_node_modules:/app/node_modules
-    command: ["sh", "-c", "npm install && ([ -f .next/fallback-build-manifest.json ]) || npm run build; exec npm run dev"]
+      # Keep .next off the bind mount: host .next is often missing, wrong arch, or stale vs Linux dev.
+      - web_next:/app/.next
     restart: "no"
     environment:
       NODE_ENV: development
       HOSTNAME: "0.0.0.0"
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${RAGLINE_API_PORT:-8000}}
       WATCHPACK_POLLING: "true"
 
 volumes:
   web_node_modules:
+  web_next:
   uploads_data:

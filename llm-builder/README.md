@@ -10,18 +10,31 @@ Fully on-premises AI infrastructure platform: data ingestion, RAG, fine-tuning, 
 
 ## Quick start (Docker, project name: ragline)
 
+**Local development** (bind mounts, reload on save):
+
 ```bash
-./setup.sh   # create .env, build, start infra, run migrations, start all
-./start.sh   # start containers (backend --reload, frontend npm run dev; reload on save)
-./stop.sh    # stop containers (data preserved)
+./setup.sh   # clean slate, backup if possible, build dev images, migrate, start dev stack
+./start.sh   # ensure up, then stream logs (Ctrl+C stops following only)
+./stop.sh    # stop dev stack (data preserved)
 ```
+
+**Production** (server: upload repo, configure `.env`, then):
+
+```bash
+./setup-prod.sh   # clean slate, build prod images, migrate, start stack
+./start-prod.sh   # start or recreate containers (no logs)
+./logs-prod.sh    # follow logs; optional: ./logs-prod.sh app web
+./stop-prod.sh    # stop stack (data preserved)
+```
+
+Shared logic lives in `_ragline_common.sh`. Override the compose project with `RAGLINE_PROJECT=name` if needed.
 
 Containers and volumes are named under the **ragline** project so they don’t clash with other compose stacks.
 
 - App: http://localhost:3000  
 - API: http://localhost:8000  
 - Docs: http://localhost:8000/docs  
-- Adminer (DB): http://localhost:8080 — login with Server `postgres`, User `llmbuilder`, Password `llmbuilder`, Database `llmbuilder`  
+- Adminer (DB): http://localhost:8096 — login with Server `postgres`, User `llmbuilder`, Password `llmbuilder`, Database `llmbuilder`  
 
 Register a user and use **Knowledge** (upload docs, RAG), **Models** (Ollama/OpenAI/vLLM), **Deployments** (RAG + model + prompt), and **Chat**.
 
@@ -31,7 +44,9 @@ Register a user and use **Knowledge** (upload docs, RAG), **Models** (Ollama/Ope
 - `backend/` — FastAPI app, workers, migrations
 - `docker-compose.yml` — all services (project name: **ragline**)
 - `docker-compose.gpu.yml` — optional GPU inference
-- `setup.sh` / `start.sh` / `stop.sh` — Docker lifecycle for this project only
+- `_ragline_common.sh` — shared helpers for lifecycle scripts  
+- `setup.sh` / `start.sh` / `stop.sh` — dev lifecycle  
+- `setup-prod.sh` / `start-prod.sh` / `logs-prod.sh` / `stop-prod.sh` — production lifecycle  
 
 ## Users and login
 

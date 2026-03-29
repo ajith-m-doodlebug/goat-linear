@@ -13,6 +13,14 @@ class UserCreate(UserBase):
     password: str
 
 
+class UserCreateBySuperAdmin(BaseModel):
+    """Create a user from the Users admin UI (super admin only)."""
+
+    email: EmailStr
+    password: str
+    role: Role
+
+
 class UserUpdate(BaseModel):
     full_name: str | None = None
     role: Role | None = None
