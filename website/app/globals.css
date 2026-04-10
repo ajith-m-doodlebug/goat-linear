@@ -1,56 +1,110 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-:root {
-  --background: #fafbff;
-  --foreground: #0f172a;
-  --primary: #2563eb;
-  --primary-dark: #1e3a8a;
-  --primary-glow: rgba(37, 99, 235, 0.4);
-  --accent: #06b6d4;
-  --accent-light: #e0f2fe;
-  --gold: #f59e0b;
-  --gradient-hero: linear-gradient(135deg, #1e3a8a 0%, #2563eb 40%, #06b6d4 100%);
-  --gradient-card: linear-gradient(145deg, rgba(255,255,255,0.9) 0%, rgba(224,242,254,0.5) 100%);
+@theme inline {
+  --font-headline: var(--font-space-grotesk), "Space Grotesk", ui-sans-serif, system-ui,
+    sans-serif;
+  --font-body: var(--font-inter), "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: #0b1326;
+  --color-surface: #0b1326;
+  --color-surface-dim: #0b1326;
+  --color-on-background: #dae2fd;
+  --color-on-surface: #dae2fd;
+  --color-primary: #a5e7ff;
+  --color-primary-container: #00d2ff;
+  --color-on-primary: #003543;
+  --color-on-primary-container: #00566a;
+  --color-secondary: #b9c7df;
+  --color-on-secondary: #233144;
+  --color-secondary-container: #3c4a5e;
+  --color-on-secondary-container: #abb9d1;
+  --color-tertiary: #ffd79f;
+  --color-on-tertiary: #442b00;
+  --color-tertiary-container: #ffb229;
+  --color-surface-container: #171f33;
+  --color-surface-container-low: #131b2e;
+  --color-surface-container-high: #222a3d;
+  --color-surface-container-highest: #2d3449;
+  --color-surface-container-lowest: #060e20;
+  --color-surface-variant: #2d3449;
+  --color-surface-bright: #31394d;
+  --color-on-surface-variant: #bbc9cf;
+  --color-outline: #859399;
+  --color-outline-variant: #3c494e;
+  --color-primary-fixed-dim: #47d6ff;
+  --color-secondary-fixed-dim: #b9c7df;
+  --color-inverse-surface: #dae2fd;
+  --color-inverse-on-surface: #283044;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  @apply bg-background text-on-background font-body antialiased;
 }
 
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+.material-symbols-outlined {
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  vertical-align: middle;
 }
 
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+.kinetic-gradient {
+  background: linear-gradient(135deg, #a5e7ff 0%, #00d2ff 100%);
 }
 
-@keyframes gradient-shift {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.85; }
+.glass-panel {
+  background: rgba(45, 52, 73, 0.8);
+  backdrop-filter: blur(24px);
 }
 
-.animate-float {
-  animation: float 6s ease-in-out infinite;
+.intelligence-pulse {
+  width: 8px;
+  height: 8px;
+  background-color: #a5e7ff;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 0 0 rgba(165, 231, 255, 0.7);
+  animation: intelligence-pulse-ring 2s infinite;
 }
 
-.animate-shimmer {
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-  background-size: 200% 100%;
-  animation: shimmer 2s infinite;
-}
-
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+@keyframes intelligence-pulse-ring {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(165, 231, 255, 0.7);
   }
-  .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-dark via-primary to-accent;
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 10px rgba(165, 231, 255, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(165, 231, 255, 0);
+  }
+}
+
+.intelligence-pulse-ripple {
+  width: 4px;
+  height: 4px;
+  background-color: #a5e7ff;
+  border-radius: 50%;
+  display: inline-block;
+  position: relative;
+}
+
+.intelligence-pulse-ripple::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: inherit;
+  border-radius: 50%;
+  animation: intelligence-ripple 2s infinite;
+}
+
+@keyframes intelligence-ripple {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(4);
+    opacity: 0;
   }
 }

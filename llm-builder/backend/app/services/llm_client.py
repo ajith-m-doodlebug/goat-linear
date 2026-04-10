@@ -21,7 +21,12 @@ def _ollama_complete(model_id: str, prompt: str, base_url: str, **kwargs) -> str
 
 
 def _openai_chat_url(base_url: str | None) -> str:
-    return (base_url or "https://api.openai.com").rstrip("/") + "/v1/chat/completions"
+    base = (base_url or "https://api.openai.com").rstrip("/")
+    if base.endswith("/chat/completions"):
+        return base
+    if base.endswith("/v1"):
+        return base + "/chat/completions"
+    return base + "/v1/chat/completions"
 
 
 def _openai_complete(model_id: str, prompt: str, base_url: str, api_key: str | None, **kwargs) -> str:
@@ -242,10 +247,6 @@ def complete_from_frozen_config(model_config: dict, prompt: str, **extra_config)
         api_key = api_key or os.environ.get(model_config.get("api_key_env") or "ANTHROPIC_API_KEY")
         return _anthropic_complete(model_id, prompt, base_url or "https://api.anthropic.com", api_key, **extra)
     if provider in ("vllm", "openai", "custom"):
-        if base_url and not base_url.endswith("/v1"):
-            base_url = base_url + "/v1"
-        if not base_url and provider == "ollama":
-            base_url = "http://localhost:11434/v1"
         return _openai_complete(model_id, prompt, base_url, api_key, **extra)
     raise ValueError(f"Unsupported provider: {provider}")
 
@@ -279,12 +280,7 @@ def complete_from_frozen_config_with_images(
             model_id, prompt, base_url or "https://api.anthropic.com", api_key, images, **extra
         )
     if provider in ("vllm", "openai", "custom"):
-        bu = base_url
-        if bu and not bu.endswith("/v1"):
-            bu = bu + "/v1"
-        if not bu and provider == "ollama":
-            bu = "http://localhost:11434/v1"
-        return _openai_complete_with_images(model_id, prompt, bu, api_key, images, **extra)
+        return _openai_complete_with_images(model_id, prompt, base_url, api_key, images, **extra)
     raise ValueError(f"Unsupported provider: {provider}")
 
 

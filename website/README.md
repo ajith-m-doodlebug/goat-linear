@@ -1,64 +1,36 @@
-# RAGline Website
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-Standalone marketing website for RAGline: landing page, how-to-use, why-use, about, contact (Firebase), and protected download (Docker command for LLM Builder) for logged-in users.
+## Getting Started
 
-## Setup
-
-1. **Install dependencies**
-
-   ```bash
-   npm install
-   ```
-
-2. **Firebase**
-
-   - Create a [Firebase project](https://console.firebase.google.com).
-   - Enable **Authentication** → **Google** (and optionally Email/Password).
-   - Enable **Firestore** (for user profiles and contact form submissions).
-   - Copy the project config and create `.env.local`:
-
-   ```bash
-   cp .env.example .env.local
-   ```
-
-   Fill in:
-
-   - `NEXT_PUBLIC_FIREBASE_API_KEY`
-   - `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
-   - `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
-   - `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
-   - `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
-   - `NEXT_PUBLIC_FIREBASE_APP_ID`
-
-   Optional (for `/download`):
-
-   - `NEXT_PUBLIC_DOCKER_IMAGE` – e.g. `your-registry/llm-builder:latest`
-   - `NEXT_PUBLIC_DOCKER_RUN_CMD` – full `docker run ...` command
-
-3. **Run**
-
-   ```bash
-   npm run dev
-   ```
-
-   Opens at **http://localhost:3001** (port 3001 to avoid clashing with the main LLM Builder app on 3000).
-
-**RAGline** is the website brand; the downloadable product is **LLM Builder**.
-
-## Build
+First, run the development server:
 
 ```bash
-npm run build
-npm start
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
 ```
 
-## Pages
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-- `/` – Landing (hero, three cards)
-- `/about` – About
-- `/how-to-use` – How to use
-- `/why-use` – Why use
-- `/contact` – Contact form (submissions stored in Firestore `contacts`)
-- `/register` – Create account (Google Sign-In)
-- `/login` – Log in (Google Sign-In)
-- `/download` – Protected; shows Docker command when logged in
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+
+## Learn More
+
+To learn more about Next.js, take a look at the following resources:
+
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
