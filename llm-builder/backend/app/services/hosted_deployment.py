@@ -49,7 +49,7 @@ def _build_frozen_config(
         "extra": model.config or {},
     }
     if model.api_key_encrypted:
-        model_config["_api_key"] = model.api_key_encrypted  # for in-process hosted calls
+        model_config["_api_key"] = model.api_key_encrypted
 
     embedding_model = "all-MiniLM-L6-v2"
     embedding_query_prefix = None
@@ -244,7 +244,6 @@ def start_version(db: Session, version_id: str) -> DeploymentVersion:
         dep.live_version = version_id
     db.commit()
     db.refresh(v)
-    # Warm this version's embedding model so first hosted API request is fast
     if v.frozen_config and (v.frozen_config.get("retriever") or {}).get("embedding_model"):
         t = threading.Thread(target=_warm_version_embedding_model, args=(version_id,), daemon=True)
         t.start()
@@ -252,7 +251,6 @@ def start_version(db: Session, version_id: str) -> DeploymentVersion:
 
 
 def stop_version(db: Session, version_id: str) -> DeploymentVersion:
-    """Set this version to stopped and clear deployment.live_version if this was the live one."""
     v = db.query(DeploymentVersion).filter(DeploymentVersion.id == version_id).first()
     if not v:
         raise ValueError("Version not found")
@@ -327,7 +325,6 @@ def get_hosted_session_messages(
     session_id: str,
     limit: int = 20,
 ) -> list[dict]:
-    """Load last N messages for (deployment_id, version_id, session_id) as list of {role, content}."""
     from app.models.hosted_session_message import HostedSessionMessage
     rows = (
         db.query(HostedSessionMessage)
@@ -340,9 +337,9 @@ def get_hosted_session_messages(
         .all()
     )
     out = []
-    for r in rows[-(limit * 2) :]:  # last limit*2 messages (limit turns)
+    for r in rows[-(limit * 2) :]:
         out.append({"role": r.role, "content": r.content or ""})
-    return out[-limit * 2 :]  # cap to last N turns (user+assistant pairs)
+    return out[-limit * 2 :]
 
 
 def add_hosted_session_messages(
@@ -372,7 +369,6 @@ def add_hosted_session_messages(
         )
         db.add(m)
     db.commit()
-    # Trim: keep only last max_messages for this session
     rows = (
         db.query(HostedSessionMessage.id)
         .filter(

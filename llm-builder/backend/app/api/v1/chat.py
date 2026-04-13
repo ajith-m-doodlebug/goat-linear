@@ -1,5 +1,6 @@
 import threading
 import uuid
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -18,6 +19,15 @@ from app.services.chat_attachments import validate_images_from_body
 from app.services.embedding_registry import warm_embedding_model
 
 router = APIRouter()
+
+
+def _utc_rfc3339(dt: datetime | None) -> str:
+    """Serialize DB datetimes for JSON. Naive values are UTC (datetime.utcnow); browsers need Z to parse correctly."""
+    if not dt:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _warm_deployment_embedding_model(deployment_id: str) -> None:
@@ -63,7 +73,6 @@ def create_session(
     db.add(session)
     db.commit()
     db.refresh(session)
-    # Warm this deployment's KB embedding model in background so first message is fast
     if dep.knowledge_base_id:
         t = threading.Thread(target=_warm_deployment_embedding_model, args=(deployment_id,), daemon=True)
         t.start()
@@ -81,7 +90,7 @@ def list_sessions(
         q = q.filter(ChatSession.deployment_id == deployment_id)
     sessions = q.order_by(ChatSession.updated_at.desc()).limit(50).all()
     return [
-        {"id": s.id, "deployment_id": s.deployment_id, "title": s.title, "updated_at": s.updated_at.isoformat() if s.updated_at else ""}
+        {"id": s.id, "deployment_id": s.deployment_id, "title": s.title, "updated_at": _utc_rfc3339(s.updated_at)}
         for s in sessions
     ]
 
@@ -137,7 +146,7 @@ def get_messages(
             "content": m.content,
             "attachments": m.attachments,
             "citations": m.citations,
-            "created_at": m.created_at.isoformat() if m.created_at else "",
+            "created_at": _utc_rfc3339(m.created_at),
         }
         for m in messages
     ]
@@ -165,7 +174,6 @@ def send_message(
             detail="content or images required",
         )
 
-    # Load last N turns for memory (from deployment's live version frozen_config or default)
     dep = db.query(Deployment).filter(Deployment.id == session.deployment_id).first()
     memory_turns = 10
     if dep and dep.live_version:

@@ -9,6 +9,7 @@ from app.db.base import Base
 class ModelProvider(str, enum.Enum):
     OLLAMA = "ollama"
     VLLM = "vllm"
+    RAGLINE_SELF_HOSTED = "ragline_self_hosted"
     OPENAI = "openai"
     CUSTOM = "custom"
 
@@ -24,7 +25,7 @@ class ModelRegistry(Base):
     id = Column(String(36), primary_key=True, index=True)
     name = Column(String(255), nullable=False)
     model_type = Column(String(32), nullable=False, default=ModelType.BASE.value)
-    provider = Column(String(32), nullable=False)  # ollama, vllm, openai, custom
+    provider = Column(String(32), nullable=False)  # ollama, vllm, ragline_self_hosted, openai, custom
     endpoint_url = Column(String(1024), nullable=True)  # base URL for API
     model_id = Column(String(255), nullable=False)  # e.g. llama2, gpt-4, model name
     api_key_encrypted = Column(Text, nullable=True)  # optional; for openai/custom

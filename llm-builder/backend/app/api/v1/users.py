@@ -108,7 +108,6 @@ def update_user(
         user.default_prompt_id = body.default_prompt_id if body.default_prompt_id else None
     if body.password is not None:
         user.hashed_password = get_password_hash(body.password)
-    # Role can only be changed by super_admin; allowed values: admin, developer, tester
     if body.role is not None:
         if current.role != Role.SUPER_ADMIN:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only super admin can change roles")

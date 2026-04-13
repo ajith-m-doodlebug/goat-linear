@@ -58,12 +58,15 @@ export default function ChatPage() {
     "Chat",
     <Button
       variant="primary"
+      aria-label="Start New Chat"
+      title="Start New Chat"
       onClick={() => {
         setShowNewChat(true);
         setNewChatDeploymentId(deployments[0]?.id ?? "");
       }}
     >
-      Start New Chat
+      <span className="hidden sm:inline">Start New Chat</span>
+      <span className="sm:hidden">New chat</span>
     </Button>
   );
 
@@ -256,8 +259,10 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-6rem)]">
-      <PageHeader description="Pick a deployment and chat. Answers are grounded in your documents when a knowledge base is linked." />
+    <div className="flex flex-col flex-1 min-h-0">
+      <div className="shrink-0">
+        <PageHeader description="Pick a deployment and chat. Answers are grounded in your documents when a knowledge base is linked." />
+      </div>
 
       <Modal open={showNewChat} onClose={() => setShowNewChat(false)} title="Start New Chat">
         <form onSubmit={startNewChat} className="space-y-4">
@@ -310,12 +315,12 @@ export default function ChatPage() {
         </form>
       </Modal>
 
-      <div className="flex gap-4 flex-1 min-h-0">
-        <Card className="w-56 flex-shrink-0 flex flex-col overflow-hidden">
-          <div className="px-4 py-3 border-b border-[var(--border)]">
+      <div className="flex flex-col md:flex-row gap-4 flex-1 min-h-0">
+        <Card className="w-full md:w-56 flex-shrink-0 flex flex-col overflow-hidden max-md:max-h-40">
+          <div className="px-4 py-2 md:py-3 border-b border-[var(--border)] shrink-0">
             <h2 className="font-semibold text-slate-800 text-sm">Chats</h2>
           </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+          <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-0.5">
             {sessions.length > 0 && (
               <>
                 <p className="px-3 pt-1 pb-1 text-xs font-semibold text-slate-500 uppercase">Recent</p>

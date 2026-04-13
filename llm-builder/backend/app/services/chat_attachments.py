@@ -3,7 +3,7 @@ import base64
 import re
 
 MAX_CHAT_IMAGES = 4
-MAX_IMAGE_BYTES = 6 * 1024 * 1024  # 6 MiB per image
+MAX_IMAGE_BYTES = 6 * 1024 * 1024
 ALLOWED_MEDIA_TYPES = frozenset(
     {"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"}
 )
@@ -40,7 +40,6 @@ def validate_images_from_body(images: list | None) -> list[dict]:
             raise ValueError(f"images[{i}].data must be a non-empty base64 string")
         b64 = raw.strip()
         if b64.startswith("data:"):
-            # data:image/png;base64,xxxx
             m = re.match(r"data:([^;]+);base64,(.+)", b64, re.DOTALL)
             if not m:
                 raise ValueError(f"images[{i}]: invalid data URL")

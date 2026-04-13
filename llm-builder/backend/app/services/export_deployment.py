@@ -1,4 +1,3 @@
-"""Export a deployment as a ready-to-run API server bundle (config, vector snapshot, server code)."""
 import hashlib
 import io
 import json
@@ -10,10 +9,9 @@ from sqlalchemy.orm import Session
 
 
 def _export_ports(deployment_id: str) -> tuple[int, int]:
-    """Return (api_port, qdrant_port) derived from deployment_id so each export gets unique ports."""
     h = int(hashlib.md5(deployment_id.encode()).hexdigest()[:6], 16)
-    api_port = 8001 + (h % 999)      # 8001–8999 (avoids 8000 used by main app)
-    qdrant_port = 6334 + (h % 100)  # 6334–6433 (avoids 6333 used by main Qdrant)
+    api_port = 8001 + (h % 999)
+    qdrant_port = 6334 + (h % 100)
     return api_port, qdrant_port
 
 from app.models.deployment import Deployment
@@ -74,7 +72,6 @@ def build_export_bundle(db: Session, deployment_id: str) -> bytes:
         if pt:
             prompt_text = pt.content
 
-    # Model config (do not export raw API key; user sets env in README)
     model_config = {
         "provider": model.provider,
         "endpoint_url": model.endpoint_url or "",
@@ -83,7 +80,6 @@ def build_export_bundle(db: Session, deployment_id: str) -> bytes:
         "extra": model.config or {},
     }
 
-    # Retriever config
     embedding_model = "all-MiniLM-L6-v2"
     embedding_query_prefix = None
     vector_size = 384
@@ -462,7 +458,6 @@ class ChatCompletionRequest(BaseModel):
 def chat_completions(body: ChatCompletionRequest):
     if body.stream:
         raise HTTPException(status_code=400, detail="Streaming not supported")
-    # Last user message as the question
     question = ""
     for m in reversed(body.messages or []):
         if m.role == "user" and m.content:

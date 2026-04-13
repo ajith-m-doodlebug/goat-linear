@@ -71,10 +71,14 @@ export default function GettingStartedPage() {
               lifecycle scripts from the project root. Development mode uses bind mounts so code
               reloads on save.
             </p>
-            <CodeBlock>{`./setup.sh   # clean slate, build dev images, migrate, start dev stack
-./start.sh   # ensure stack is up; Ctrl+C stops log follow only`}</CodeBlock>
+            <CodeBlock>{`chmod +x setup.sh start.sh reload-start.sh stop.sh logs.sh
+./setup.sh          # one-time clean slate: backup, volumes reset, migrate, then stop all containers
+./reload-start.sh   # dev: bind mounts, API --reload, Next dev
+./logs.sh           # follow logs (optional: ./logs.sh app web)`}</CodeBlock>
             <p className="mt-4 text-sm text-on-surface-variant">
-              To stop without losing data: <code className="text-primary">./stop.sh</code>. Compose
+              Production-style run: <code className="text-primary">./start.sh</code> after{" "}
+              <code className="text-primary">./setup.sh</code>. Stop without losing data:{" "}
+              <code className="text-primary">./stop.sh</code>. Compose
               project name defaults to <strong className="text-on-surface">ragline</strong> so it
               does not clash with other stacks; override with{" "}
               <code className="text-primary">RAGLINE_PROJECT</code> if needed.
@@ -84,35 +88,23 @@ export default function GettingStartedPage() {
           <section id="open-urls">
             <h2 className="mb-4 font-headline text-2xl font-bold text-primary">2. Open the URLs</h2>
             <p className="mb-4 text-secondary">
-              With the dev stack running, these endpoints are available on your machine:
+              With the stack running, use the host ports from your <code className="text-primary">.env</code>{" "}
+              (<code className="text-primary">RAGLINE_UI_PORT</code>, <code className="text-primary">RAGLINE_API_PORT</code>
+              ; defaults 3000 and 8000). <code className="text-primary">./start.sh</code> prints the exact App and API
+              URLs. Examples with defaults:
             </p>
             <ul className="mb-4 list-inside list-disc space-y-2 text-secondary">
               <li>
                 <strong className="text-on-surface">Web app:</strong>{" "}
-                <a
-                  href="http://localhost:3000"
-                  className="text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary"
-                >
-                  http://localhost:3000
-                </a>
+                <code className="text-primary">http://localhost:{"{RAGLINE_UI_PORT}"}</code> (default 3000)
               </li>
               <li>
                 <strong className="text-on-surface">REST API:</strong>{" "}
-                <a
-                  href="http://localhost:8000"
-                  className="text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary"
-                >
-                  http://localhost:8000
-                </a>
+                <code className="text-primary">http://localhost:{"{RAGLINE_API_PORT}"}</code> (default 8000)
               </li>
               <li id="api-reference">
                 <strong className="text-on-surface">Interactive API docs (OpenAPI):</strong>{" "}
-                <a
-                  href="http://localhost:8000/docs"
-                  className="text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary"
-                >
-                  http://localhost:8000/docs
-                </a>
+                <code className="text-primary">http://localhost:{"{RAGLINE_API_PORT}"}/docs</code>
               </li>
               <li>
                 <strong className="text-on-surface">Adminer (database UI):</strong>{" "}
@@ -161,8 +153,8 @@ export default function GettingStartedPage() {
               endpoints: <strong className="text-on-surface">Ollama</strong> on your LAN, a{" "}
               <strong className="text-on-surface">vLLM</strong> server, or{" "}
               <strong className="text-on-surface">OpenAI</strong>-compatible APIs. Store API keys in
-              the registry when required. Optional: add the GPU compose profile so Ollama or vLLM
-              runs alongside the stack.
+              the registry when required. For GPU vLLM in the UI, use{" "}
+              <strong className="text-on-surface">Host Models</strong> or run Ollama on the host.
             </p>
           </section>
 
@@ -192,14 +184,15 @@ export default function GettingStartedPage() {
             <p className="mb-4 text-secondary">
               On a server, configure <code className="text-primary">.env</code> as needed, then:
             </p>
-            <CodeBlock>{`./setup-prod.sh   # build prod images, migrate, start stack
-./start-prod.sh   # start or recreate containers
-./logs-prod.sh    # follow logs (optional: ./logs-prod.sh app web)
-./stop-prod.sh    # stop stack; data preserved`}</CodeBlock>
+            <CodeBlock>{`./setup.sh    # clean slate, migrate, then docker compose down (no containers until start)
+./start.sh    # full stack (production images)
+./logs.sh     # follow logs (optional: ./logs.sh app web)
+./stop.sh     # stop stack; data preserved`}</CodeBlock>
             <p className="mt-4 text-sm text-on-surface-variant">
               Shared script helpers live in <code className="text-primary">_ragline_common.sh</code>.
-              Optional GPU inference: see <code className="text-primary">docker-compose.gpu.yml</code>{" "}
-              in the repo.
+              For GPU-backed models, use Host Models (vLLM on the host) or run Ollama on the host and
+              point the app at it; see <code className="text-primary">DEPLOY-SERVER.md</code> in the
+              repo for NVIDIA Container Toolkit.
             </p>
           </section>
 

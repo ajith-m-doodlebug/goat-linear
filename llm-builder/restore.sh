@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Restore a backup created by setup.sh / setup-prod.sh. Run when you want to restore data into a running stack.
+# Restore a backup created by ./setup.sh. Run when you want to restore data into a running stack.
 # Usage: ./restore.sh backup/ragline-YYYYMMDD-HHMMSS
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
-
-PROJECT="ragline"
+cd "$SCRIPT_DIR" || exit 1
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/_ragline_common.sh"
 
 usage() {
   echo "Usage: $0 <backup-dir>"
-  echo "  Restore a backup created by setup.sh (e.g. backup/ragline-20260314-123456)."
+  echo "  Restore a backup created by ./setup.sh (e.g. backup/ragline-20260314-123456)."
   echo ""
   echo "Available backups:"
   for d in backup/ragline-* 2>/dev/null; do
     [ -d "$d" ] && echo "  $d"
   done
   echo ""
-  echo "Prerequisites: run ./setup-prod.sh or ./setup.sh so Postgres exists, then run this script."
+  echo "Prerequisites: ./start.sh (or at least Postgres up), then run this script."
   exit 1
 }
 
@@ -25,7 +25,6 @@ if [ -z "$BACKUP_DIR" ]; then
   usage
 fi
 
-# Resolve relative path
 if [ ! -d "$BACKUP_DIR" ] && [ -d "${SCRIPT_DIR}/${BACKUP_DIR}" ]; then
   BACKUP_DIR="${SCRIPT_DIR}/${BACKUP_DIR}"
 fi
@@ -45,18 +44,18 @@ fi
 echo "[ragline] Restoring from ${BACKUP_DIR}"
 
 echo "[ragline] Ensuring Postgres is running..."
-docker compose -p "$PROJECT" -f docker-compose.yml up -d postgres redis qdrant postfix
+ragline_base up -d postgres redis qdrant
 echo "[ragline] Waiting for postgres..."
-until docker compose -p "$PROJECT" exec -T postgres pg_isready -U llmbuilder -d llmbuilder 2>/dev/null; do
+until ragline_base exec -T postgres pg_isready -U llmbuilder -d llmbuilder 2>/dev/null; do
   sleep 2
 done
 
 echo "[ragline] Restoring database..."
-docker compose -p "$PROJECT" exec -T postgres psql -U llmbuilder -d llmbuilder -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" 2>/dev/null || true
+ragline_base exec -T postgres psql -U llmbuilder -d llmbuilder -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" 2>/dev/null || true
 if [ "${DB_DUMP%.gz}" != "$DB_DUMP" ]; then
-  gunzip -c "$DB_DUMP" | docker compose -p "$PROJECT" exec -T postgres psql -U llmbuilder -d llmbuilder -q
+  gunzip -c "$DB_DUMP" | ragline_base exec -T postgres psql -U llmbuilder -d llmbuilder -q
 else
-  cat "$DB_DUMP" | docker compose -p "$PROJECT" exec -T postgres psql -U llmbuilder -d llmbuilder -q
+  cat "$DB_DUMP" | ragline_base exec -T postgres psql -U llmbuilder -d llmbuilder -q
 fi
 echo "[ragline] Database restored."
 
@@ -73,6 +72,7 @@ if [ -d "${BACKUP_DIR}/qdrant_storage" ] && [ -n "$(ls -A "${BACKUP_DIR}/qdrant_
 fi
 
 echo "[ragline] Restarting app and worker to use restored data..."
-docker compose -p "$PROJECT" -f docker-compose.yml up -d
+ragline_base up -d
 
-echo "[ragline] Restore done. App: http://localhost:3000"
+echo "[ragline] Restore done."
+ragline_print_service_urls

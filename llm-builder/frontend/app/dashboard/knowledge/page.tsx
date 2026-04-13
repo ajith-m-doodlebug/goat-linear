@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, getApiBase } from "@/lib/api";
 import { useTopBar } from "@/app/dashboard/TopBarContext";
 import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Card, CardBody, CardHeader } from "@/app/components/ui/Card";
@@ -223,9 +223,8 @@ export default function KnowledgePage() {
           );
         }
       }
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const token = localStorage.getItem("access_token");
-      const res = await fetch(`${API_BASE}/api/v1/knowledge-bases/${selected}/upload`, {
+      const res = await fetch(`${getApiBase()}/api/v1/knowledge-bases/${selected}/upload`, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: form,
@@ -575,7 +574,7 @@ export default function KnowledgePage() {
       </Modal>
 
       <div className="flex flex-col lg:flex-row gap-6">
-        <Card className="lg:w-72 flex-shrink-0 flex flex-col h-[28rem]">
+        <Card className="lg:w-72 flex-shrink-0 flex flex-col max-lg:max-h-[24rem] lg:h-[28rem]">
           <CardHeader className="min-h-[3.25rem] flex items-center flex-shrink-0">
             <h2 className="text-base font-semibold text-slate-800">Bases</h2>
           </CardHeader>

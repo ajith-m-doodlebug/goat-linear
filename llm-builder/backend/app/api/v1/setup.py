@@ -57,7 +57,6 @@ def run_setup(body: SetupRequest, db: Session = Depends(get_db)):
             detail="Invalid super admin email",
         )
     company_name = domain.split(".")[0].replace("-", " ").title() or "Organization"
-    # Check super admin email not already taken
     existing = db.query(User).filter(User.email == email_norm).first()
     if existing:
         raise HTTPException(

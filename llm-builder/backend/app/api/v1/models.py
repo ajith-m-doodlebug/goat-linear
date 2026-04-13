@@ -1,9 +1,11 @@
 import uuid
 from typing import Annotated
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.base import get_db
 from app.models.user import User
 from app.models.model_registry import ModelRegistry
@@ -12,6 +14,36 @@ from app.core.deps import get_current_user, require_admin
 from app.services.llm_client import complete, health_check
 
 router = APIRouter()
+
+
+def _normalized_self_hosted_endpoint(endpoint_url: str | None) -> str | None:
+    if not endpoint_url:
+        return endpoint_url
+    settings = get_settings()
+    pub = (settings.host_models_public_base_url or "").strip().rstrip("/")
+    if not pub:
+        return endpoint_url
+    src = urlparse(endpoint_url.strip().rstrip("/"))
+    dst = urlparse(pub)
+    if src.scheme not in ("http", "https") or dst.scheme not in ("http", "https"):
+        return endpoint_url
+    if not src.hostname or not dst.hostname:
+        return endpoint_url
+    if src.hostname.lower() != dst.hostname.lower():
+        return endpoint_url
+    if dst.port is None:
+        return endpoint_url
+    return f"{src.scheme}://{dst.hostname}:{dst.port}"
+
+
+def _sync_self_hosted_endpoint(model: ModelRegistry) -> bool:
+    if model.provider != "ragline_self_hosted":
+        return False
+    normalized = _normalized_self_hosted_endpoint(model.endpoint_url)
+    if (normalized or "") == (model.endpoint_url or ""):
+        return False
+    model.endpoint_url = normalized
+    return True
 
 
 def _model_to_response(m: ModelRegistry) -> ModelRegistryResponse:
@@ -35,6 +67,13 @@ def list_models(
     _: User = Depends(require_admin),
 ):
     models = db.query(ModelRegistry).all()
+    changed = False
+    for m in models:
+        changed = _sync_self_hosted_endpoint(m) or changed
+    if changed:
+        db.commit()
+        for m in models:
+            db.refresh(m)
     return [_model_to_response(m) for m in models]
 
 
@@ -70,6 +109,9 @@ def get_model(
     model = db.query(ModelRegistry).filter(ModelRegistry.id == model_id).first()
     if not model:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
+    if _sync_self_hosted_endpoint(model):
+        db.commit()
+        db.refresh(model)
     return _model_to_response(model)
 
 

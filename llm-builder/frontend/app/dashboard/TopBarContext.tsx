@@ -30,12 +30,6 @@ export function TopBarProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * Call from a page to set the top bar title and primary action. Clears on unmount.
- * Do not put `action` in deps (it's a new React node every render). Pass a single
- * dependency when the action depends on state (e.g. showForm) so we re-sync when it changes.
- * Array length must stay fixed, so we use one optional dep, not a spread.
- */
 export function useTopBar(title: string | null, action?: ReactNode, actionDep?: unknown) {
   const { setTopBar } = useContext(TopBarContext);
   useEffect(() => {
@@ -54,6 +48,7 @@ const pathnameToTitle: Record<string, string> = {
   "/dashboard/help": "Help & features",
   "/dashboard/knowledge": "Knowledge",
   "/dashboard/models": "Models",
+  "/dashboard/host-models": "Host Models",
   "/dashboard/deployments": "Deployments",
   "/dashboard/chat": "Chat",
   "/dashboard/prompts": "Prompts",

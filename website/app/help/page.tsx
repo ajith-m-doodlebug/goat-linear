@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 const topics = [
   {
     title: "Getting started",
-    body: "Follow the repo README: ./setup.sh, open the web app and API docs, register the first admin, then create a knowledge base and deployment.",
+    body: "Follow the repo README: ./setup.sh then ./reload-start.sh (or ./start.sh), open the web app and API docs, register the first admin, then create a knowledge base and deployment.",
   },
   {
     title: "API reference",
@@ -19,7 +19,7 @@ const topics = [
   },
   {
     title: "Operations",
-    body: "Compose profiles for dev vs prod, optional GPU compose for Ollama/vLLM, and health/readiness endpoints for monitoring.",
+    body: "Use ./reload-start.sh for dev (hot reload) vs ./start.sh for production images; Host Models for vLLM; health/readiness on the API for monitoring.",
   },
 ];
 

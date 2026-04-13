@@ -121,3 +121,140 @@ ragline_migrate() {
   echo "[ragline] Running migrations..."
   ragline_base run --rm app alembic upgrade head
 }
+
+ragline_env_value() {
+  local key="$1"
+  local file="${SCRIPT_DIR}/.env"
+  if [[ ! -f "$file" ]]; then
+    return 0
+  fi
+  awk -F= -v k="$key" '$1==k {sub(/^[^=]*=/, ""); print; exit}' "$file"
+}
+
+ragline_env_value_trimmed() {
+  local raw first last
+  raw="$(ragline_env_value "$1")"
+  raw="${raw//$'\r'/}"
+  raw="${raw#"${raw%%[![:space:]]*}"}"
+  raw="${raw%"${raw##*[![:space:]]}"}"
+  while [[ "${#raw}" -ge 2 ]]; do
+    first="${raw:0:1}"
+    last="${raw:$((${#raw} - 1)):1}"
+    if [[ "$first" == '"' && "$last" == '"' ]]; then
+      raw="${raw:1}"
+      raw="${raw%?}"
+      continue
+    fi
+    if [[ "$first" == "'" && "$last" == "'" ]]; then
+      raw="${raw:1}"
+      raw="${raw%?}"
+      continue
+    fi
+    break
+  done
+  echo "$raw"
+}
+
+ragline_ui_port() {
+  local v
+  v="$(ragline_env_value_trimmed RAGLINE_UI_PORT)"
+  echo "${v:-3000}"
+}
+
+ragline_api_port() {
+  local v
+  v="$(ragline_env_value_trimmed RAGLINE_API_PORT)"
+  echo "${v:-8000}"
+}
+
+ragline_print_service_urls() {
+  local ui api
+  ui="$(ragline_ui_port)"
+  api="$(ragline_api_port)"
+  echo "[ragline] App: http://localhost:${ui}  API: http://localhost:${api}  Docs: http://localhost:${api}/docs"
+}
+
+ragline_host_models_image() {
+  local v
+  v="$(ragline_env_value_trimmed HOST_MODELS_VLLM_IMAGE)"
+  echo "${v:-vllm/vllm-openai:latest}"
+}
+
+ragline_host_models_pull_image_if_missing() {
+  local image
+  image="$(ragline_host_models_image)"
+  echo "[ragline] Host Models image check: ${image}"
+  if docker image inspect "$image" >/dev/null 2>&1; then
+    echo "[ragline] Host Models image already present."
+    return 0
+  fi
+  echo "[ragline] Pulling Host Models image..."
+  docker pull "$image"
+}
+
+ragline_host_models_start_stopped_containers() {
+  local image ids
+  image="$(ragline_host_models_image)"
+  ids="$(
+    {
+      docker ps -aq --filter "ancestor=${image}" --filter "status=created"
+      docker ps -aq --filter "ancestor=${image}" --filter "status=exited"
+    } 2>/dev/null | awk 'NF && !seen[$0]++'
+  )"
+  if [[ -z "$ids" ]]; then
+    echo "[ragline] No stopped Host Models containers to start."
+    return 0
+  fi
+  echo "[ragline] Starting existing Host Models containers..."
+  # shellcheck disable=SC2086
+  docker start $ids >/dev/null
+}
+
+ragline_host_models_stop_running_containers() {
+  local image ids
+  image="$(ragline_host_models_image)"
+  ids="$(docker ps -q --filter "ancestor=${image}" 2>/dev/null || true)"
+  if [[ -z "$ids" ]]; then
+    echo "[ragline] No running Host Models containers to stop."
+    return 0
+  fi
+  echo "[ragline] Stopping running Host Models containers..."
+  # shellcheck disable=SC2086
+  docker stop $ids >/dev/null
+}
+
+ragline_host_models_precheck() {
+  echo "[ragline] Host Models precheck (vLLM control plane)..."
+  echo "[ragline] Published ports from .env: UI $(ragline_ui_port)  API $(ragline_api_port)"
+  if [[ ! -S /var/run/docker.sock ]]; then
+    echo "[ragline] WARN: /var/run/docker.sock not found on host."
+  else
+    echo "[ragline] OK: /var/run/docker.sock present on host."
+  fi
+
+  local base_url
+  base_url="$(ragline_env_value HOST_MODELS_PUBLIC_BASE_URL)"
+  if [[ -z "$base_url" ]]; then
+    echo "[ragline] WARN: HOST_MODELS_PUBLIC_BASE_URL not set in .env (defaults to http://localhost)."
+  else
+    echo "[ragline] OK: HOST_MODELS_PUBLIC_BASE_URL=$base_url"
+  fi
+
+  local hf_cache
+  hf_cache="$(ragline_env_value HOST_MODELS_HF_CACHE_DIR)"
+  if [[ -z "$hf_cache" ]]; then
+    echo "[ragline] WARN: HOST_MODELS_HF_CACHE_DIR not set in .env (default /tmp/hf-cache)."
+  elif [[ "$hf_cache" != /* ]]; then
+    echo "[ragline] WARN: HOST_MODELS_HF_CACHE_DIR must be an absolute host path. Current: $hf_cache"
+  else
+    mkdir -p "$hf_cache" 2>/dev/null || true
+    echo "[ragline] OK: HOST_MODELS_HF_CACHE_DIR=$hf_cache"
+  fi
+
+  if docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi >/dev/null 2>&1; then
+    echo "[ragline] OK: Docker GPU runtime is available."
+  else
+    echo "[ragline] WARN: Docker GPU runtime check failed. Host Models start may fail."
+  fi
+
+}

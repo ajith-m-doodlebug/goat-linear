@@ -1,12 +1,19 @@
-# Dev override: bind mounts + --reload + Next dev. Used by ./setup.sh, ./start.sh, ./stop.sh.
+# Dev override: bind mounts + --reload + Next dev. Used by ./reload-start.sh (and ./stop.sh tears it down).
 
 name: ragline
 
 services:
   app:
+    ports:
+      # Optional: hit FastAPI directly while ingress serves the public RAGLINE_API_PORT.
+      - "127.0.0.1:8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./backend:/app
       - uploads_data:/tmp/uploads
+      # Host Models: API shells out to docker against the host engine (same as base compose).
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       UPLOAD_DIR: /tmp/uploads
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
@@ -34,7 +41,8 @@ services:
     environment:
       NODE_ENV: development
       HOSTNAME: "0.0.0.0"
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${RAGLINE_API_PORT:-8000}}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+      NEXT_PUBLIC_API_PORT: ${RAGLINE_API_PORT:-8005}
       WATCHPACK_POLLING: "true"
 
 volumes:

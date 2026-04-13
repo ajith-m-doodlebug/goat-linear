@@ -2,6 +2,11 @@
 import httpx
 from app.core.config import get_settings
 from app.models.model_registry import ModelRegistry
+from app.services.vllm_hosting import vllm_endpoint_connect_base
+
+# OpenAI-compatible HTTP; colocated Docker hairpin fix applies to self-hosted engines only.
+_OPENAI_COMPAT_PROVIDERS = frozenset({"vllm", "ragline_self_hosted", "openai", "custom"})
+_SELF_HOSTED_OPENAI_COMPAT = frozenset({"vllm", "ragline_self_hosted"})
 
 
 def _ollama_default_url() -> str:
@@ -185,9 +190,8 @@ def _ollama_chat_with_images(
 
 
 def complete(model: ModelRegistry, prompt: str, **extra_config) -> str:
-    """Run completion for the given registered model. Returns generated text."""
     base_url = model.endpoint_url or None
-    api_key = model.api_key_encrypted  # stored in plain for now; can encrypt later
+    api_key = model.api_key_encrypted
     model_id = model.model_id
     config = model.config or {}
     config.update(extra_config)
@@ -196,13 +200,13 @@ def complete(model: ModelRegistry, prompt: str, **extra_config) -> str:
         return _ollama_complete(model_id, prompt, base_url or _ollama_default_url(), **config)
     if model.provider == "anthropic":
         return _anthropic_complete(model_id, prompt, base_url or "https://api.anthropic.com", api_key, **config)
-    if model.provider in ("vllm", "openai", "custom"):
-        return _openai_complete(model_id, prompt, base_url, api_key, **config)
+    if model.provider in _OPENAI_COMPAT_PROVIDERS:
+        bu = vllm_endpoint_connect_base(base_url) if model.provider in _SELF_HOSTED_OPENAI_COMPAT else base_url
+        return _openai_complete(model_id, prompt, bu, api_key, **config)
     raise ValueError(f"Unsupported provider: {model.provider}")
 
 
 def complete_with_images(model: ModelRegistry, prompt: str, images: list[dict], **extra_config) -> str:
-    """Multimodal completion. images: [{media_type, data}] from chat_attachments validation."""
     if not images:
         return complete(model, prompt, **extra_config)
     base_url = model.endpoint_url or None
@@ -220,21 +224,18 @@ def complete_with_images(model: ModelRegistry, prompt: str, images: list[dict], 
         return _anthropic_complete_with_images(
             model_id, prompt, base_url or "https://api.anthropic.com", api_key, images, **config
         )
-    if model.provider in ("vllm", "openai", "custom"):
-        return _openai_complete_with_images(model_id, prompt, base_url, api_key, images, **config)
+    if model.provider in _OPENAI_COMPAT_PROVIDERS:
+        bu = vllm_endpoint_connect_base(base_url) if model.provider in _SELF_HOSTED_OPENAI_COMPAT else base_url
+        return _openai_complete_with_images(model_id, prompt, bu, api_key, images, **config)
     raise ValueError(f"Unsupported provider: {model.provider}")
 
 
 def complete_from_frozen_config(model_config: dict, prompt: str, **extra_config) -> str:
-    """
-    Run completion using a frozen model config (e.g. from hosted deployment).
-    model_config must have: provider, endpoint_url, model_id; optional: _api_key or api_key_env for OpenAI-style.
-    """
     import os
     provider = (model_config.get("provider") or "").lower()
     base_url = (model_config.get("endpoint_url") or "").strip().rstrip("/") or None
     model_id = model_config.get("model_id") or "gpt-3.5-turbo"
-    api_key = model_config.get("_api_key")  # in-process: we store it in frozen config
+    api_key = model_config.get("_api_key")
     if api_key is None and provider in ("openai", "custom"):
         api_key_env = model_config.get("api_key_env") or "API_KEY"
         api_key = os.environ.get(api_key_env)
@@ -246,15 +247,15 @@ def complete_from_frozen_config(model_config: dict, prompt: str, **extra_config)
     if provider == "anthropic":
         api_key = api_key or os.environ.get(model_config.get("api_key_env") or "ANTHROPIC_API_KEY")
         return _anthropic_complete(model_id, prompt, base_url or "https://api.anthropic.com", api_key, **extra)
-    if provider in ("vllm", "openai", "custom"):
-        return _openai_complete(model_id, prompt, base_url, api_key, **extra)
+    if provider in _OPENAI_COMPAT_PROVIDERS:
+        bu = vllm_endpoint_connect_base(base_url) if provider in _SELF_HOSTED_OPENAI_COMPAT else base_url
+        return _openai_complete(model_id, prompt, bu, api_key, **extra)
     raise ValueError(f"Unsupported provider: {provider}")
 
 
 def complete_from_frozen_config_with_images(
     model_config: dict, prompt: str, images: list[dict], **extra_config
 ) -> str:
-    """Frozen config multimodal path for hosted RAG."""
     import os
 
     if not images:
@@ -279,13 +280,13 @@ def complete_from_frozen_config_with_images(
         return _anthropic_complete_with_images(
             model_id, prompt, base_url or "https://api.anthropic.com", api_key, images, **extra
         )
-    if provider in ("vllm", "openai", "custom"):
-        return _openai_complete_with_images(model_id, prompt, base_url, api_key, images, **extra)
+    if provider in _OPENAI_COMPAT_PROVIDERS:
+        bu = vllm_endpoint_connect_base(base_url) if provider in _SELF_HOSTED_OPENAI_COMPAT else base_url
+        return _openai_complete_with_images(model_id, prompt, bu, api_key, images, **extra)
     raise ValueError(f"Unsupported provider: {provider}")
 
 
 def health_check(model: ModelRegistry) -> bool:
-    """Check if the model endpoint is reachable."""
     if model.provider == "ollama":
         url = (model.endpoint_url or _ollama_default_url()).rstrip("/") + "/api/tags"
         try:
@@ -295,13 +296,19 @@ def health_check(model: ModelRegistry) -> bool:
         except Exception:
             return False
     if model.provider == "anthropic":
-        # No public health endpoint; consider reachable if endpoint and key are set
         return bool((model.endpoint_url or "https://api.anthropic.com").strip() and model.api_key_encrypted)
-    if model.provider in ("vllm", "openai", "custom") and model.endpoint_url:
+    if model.provider in _OPENAI_COMPAT_PROVIDERS and model.endpoint_url:
         try:
-            base = model.endpoint_url.rstrip("/")
+            raw = model.endpoint_url.rstrip("/")
+            base = (
+                (vllm_endpoint_connect_base(raw) or raw).rstrip("/")
+                if model.provider in _SELF_HOSTED_OPENAI_COMPAT
+                else raw
+            )
+            # /health on the public port may be RAGLine (ingress); vLLM always exposes GET /v1/models.
+            probe = f"{base}/v1/models" if model.provider in _SELF_HOSTED_OPENAI_COMPAT else base
             with httpx.Client(timeout=5.0) as client:
-                r = client.get(base + "/health" if "vllm" in base or "localhost" in base else base)
+                r = client.get(probe)
                 return r.status_code in (200, 404, 405)
         except Exception:
             return False

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, getApiBase } from "@/lib/api";
 import { useTopBar } from "@/app/dashboard/TopBarContext";
 import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Card, CardBody, CardHeader } from "@/app/components/ui/Card";
@@ -80,9 +80,8 @@ export default function DeploymentsPage() {
   const exportVersion = async (deploymentId: string, versionId: string, deploymentName: string, versionLabel: string) => {
     setExportingVersionId(versionId);
     try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
-      const res = await fetch(`${API_BASE}/api/v1/deployments/${deploymentId}/versions/${versionId}/export`, {
+      const res = await fetch(`${getApiBase()}/api/v1/deployments/${deploymentId}/versions/${versionId}/export`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(await res.text());
@@ -103,9 +102,8 @@ export default function DeploymentsPage() {
   const exportDeployment = async (d: Deployment) => {
     setExportingId(d.id);
     try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
-      const res = await fetch(`${API_BASE}/api/v1/deployments/${d.id}/export`, {
+      const res = await fetch(`${getApiBase()}/api/v1/deployments/${d.id}/export`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(await res.text());
@@ -336,8 +334,7 @@ export default function DeploymentsPage() {
     }
   };
 
-  const API_BASE = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000") : "";
-  const hostedEndpointUrl = deployModalId ? `${API_BASE}/hosted/${deployModalId}/v1/chat/completions` : "";
+  const hostedEndpointUrl = deployModalId ? `${getApiBase()}/hosted/${deployModalId}/v1/chat/completions` : "";
 
   if (loading) {
     return (
@@ -476,7 +473,7 @@ export default function DeploymentsPage() {
                     {deployStarted ? "Version is live. You can close this and use the endpoint." : "Version created (stopped). Start it to use the endpoint."}
                   </p>
                   <p className="text-xs break-all font-mono opacity-90">Endpoint: {deployResult.endpoint_url}</p>
-                  <p className="text-xs opacity-90">Health: {API_BASE}/hosted/{deployModalId}/health</p>
+                  <p className="text-xs opacity-90">Health: {getApiBase()}/hosted/{deployModalId}/health</p>
                   {deployMemoryEnabled && (
                     <p className="text-xs mt-2 pt-2 border-t border-emerald-200/50 dark:border-emerald-700/50">
                       Send <code className="bg-white/50 dark:bg-black/20 px-1 rounded">session_id</code> in the request body or <code className="bg-white/50 dark:bg-black/20 px-1 rounded">X-Session-Id</code> header to use conversation memory.
@@ -719,7 +716,7 @@ export default function DeploymentsPage() {
               <h2 className="font-semibold text-slate-800 dark:text-slate-100">Versions</h2>
               {versionsForId && !versionsLoading && versions.length > 0 && (
                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  <code className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 font-mono text-xs break-all">{API_BASE}/hosted/{versionsForId}/v1/chat/completions</code>
+                  <code className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 font-mono text-xs break-all">{getApiBase()}/hosted/{versionsForId}/v1/chat/completions</code>
                 </p>
               )}
             </div>

@@ -1,10 +1,15 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { SetupGate } from "@/app/components/SetupGate";
 
 export const metadata: Metadata = {
   title: "RAGLine",
   description: "On-prem AI infrastructure platform",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({

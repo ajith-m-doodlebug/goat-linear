@@ -228,13 +228,13 @@ export default function HomePage() {
               {[
                 {
                   step: "1",
-                  title: "Run ./setup.sh & ./start.sh",
-                  body: "From the llm-builder repo root, start the dev stack (Postgres, Redis, Qdrant, API, workers, web).",
+                  title: "Run ./setup.sh then ./reload-start.sh",
+                  body: "From the llm-builder repo root: ./setup.sh once, then ./reload-start.sh for dev (or ./start.sh for production images).",
                 },
                 {
                   step: "2",
-                  title: "Open localhost:3000",
-                  body: "Register the first user—that account is admin. Use the same login for the dashboard.",
+                  title: "Open the web UI (see .env ports)",
+                  body: "Use RAGLINE_UI_PORT (default 3000). Register the first user—that account is admin.",
                 },
                 {
                   step: "3",

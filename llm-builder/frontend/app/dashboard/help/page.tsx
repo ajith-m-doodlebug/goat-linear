@@ -19,6 +19,11 @@ const features: { label: string; line: string; href: string }[] = [
   { label: "Chat", line: "Sessions, citations, memory", href: "/dashboard/chat" },
   { label: "Prompts", line: "Templates with {context}, {question}", href: "/dashboard/prompts" },
   { label: "Chunking & embedding", line: "RAG config presets", href: "/dashboard/rag-configs" },
+  {
+    label: "Host Models",
+    line: "Run vLLM from a local model directory on the host, register as a model endpoint",
+    href: "/dashboard/host-models",
+  },
 ];
 
 export default function HelpPage() {

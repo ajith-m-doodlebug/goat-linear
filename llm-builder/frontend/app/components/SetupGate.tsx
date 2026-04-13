@@ -4,7 +4,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { setupApi } from "@/lib/api";
 
-/** After docker stop/start the API/DB can be briefly unavailable; retry before deciding setup state. */
 const STATUS_ATTEMPTS = 15;
 const STATUS_DELAY_MS = 400;
 
@@ -38,7 +37,6 @@ export function SetupGate({ children }: { children: ReactNode }) {
         }
       }
       if (cancelled) return;
-      // Do not send users to /setup on persistent errors — that would look like "setup reset".
       setReady(true);
     })();
 

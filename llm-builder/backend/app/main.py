@@ -18,8 +18,37 @@ settings = get_settings()
 setup_logging(use_json=not settings.debug, level="DEBUG" if settings.debug else "INFO")
 
 
+def _cors_allow_origins() -> list[str]:
+    s = get_settings()
+    p = s.ragline_ui_port
+    base = [
+        f"http://localhost:{p}",
+        f"http://127.0.0.1:{p}",
+    ]
+    if p == 80:
+        base.extend(["http://localhost", "http://127.0.0.1"])
+    if p == 443:
+        base.extend(["https://localhost", "https://127.0.0.1"])
+    extra = (s.cors_allow_origins or "").strip()
+    if not extra:
+        return base
+    out = list(base)
+    for item in extra.split(","):
+        item = item.strip()
+        if item and item not in out:
+            out.append(item)
+    return out
+
+
+def _cors_allow_origin_regex() -> str | None:
+    """Any host on RAGLINE_UI_PORT (non-default ports only — avoids matching every :80 site)."""
+    p = get_settings().ragline_ui_port
+    if p in (80, 443):
+        return None
+    return rf"^https?://[\w\.\-]+:{p}$"
+
+
 def _is_setup_allowed_path(path: str, method: str) -> bool:
-    """True if this path is allowed when setup is not completed."""
     if path == "/api/v1/setup/status" and method == "GET":
         return True
     if path == "/api/v1/setup" and method == "POST":
@@ -48,15 +77,14 @@ class SetupRequiredMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
-    # Warm default embedding model so first RAG request does not pay cold-load (~10s)
+    if settings.auto_create_tables:
+        Base.metadata.create_all(bind=engine)
     try:
         from app.services.embedding_registry import warm_embedding_model
         await asyncio.to_thread(warm_embedding_model)
     except Exception:
-        pass  # do not block startup if warmup fails (e.g. no network for model download)
+        pass
     yield
-    # shutdown if needed
 
 
 app = FastAPI(
@@ -69,12 +97,8 @@ app = FastAPI(
 app.add_middleware(SetupRequiredMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3005",
-        "http://127.0.0.1:3005",
-    ],
+    allow_origins=_cors_allow_origins(),
+    allow_origin_regex=_cors_allow_origin_regex(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -91,7 +115,6 @@ def health():
 
 @app.get("/ready")
 def ready():
-    """Kubernetes-style readiness: DB and Redis reachable."""
     from fastapi.responses import JSONResponse
     try:
         from app.db.base import SessionLocal

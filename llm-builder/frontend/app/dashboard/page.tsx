@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, getApiBase } from "@/lib/api";
 import { useTopBar } from "@/app/dashboard/TopBarContext";
 import { Card, CardBody, CardHeader } from "@/app/components/ui/Card";
 import { Button } from "@/app/components/ui/Button";
@@ -114,8 +114,6 @@ function formatRelativeTime(iso: string): string {
   return d.toLocaleDateString();
 }
 
-const API_BASE = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000") : "";
-
 export default function DashboardPage() {
   useTopBar("Home", null);
   const [data, setData] = useState<Overview | null>(null);
@@ -164,7 +162,7 @@ export default function DashboardPage() {
         apiRequest<DeploymentVersion[]>(`/api/v1/deployments/${dep.id}/versions`).then((versions) => {
           const running = versions.find((v) => v.status === "running");
           if (!running) return null;
-          const endpoint_url = `${API_BASE}/hosted/${dep.id}/v1/chat/completions`;
+          const endpoint_url = `${getApiBase()}/hosted/${dep.id}/v1/chat/completions`;
           return { deployment: dep, version: running, endpoint_url } as LiveHostedRow;
         })
       )

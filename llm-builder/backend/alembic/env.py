@@ -7,7 +7,17 @@ from alembic import context
 
 from app.core.config import get_settings
 from app.db.base import Base
-from app.models import User, KnowledgeBase, Document, ModelRegistry, PromptTemplate, Deployment, ChatSession, ChatMessage
+from app.models import (
+    User,
+    KnowledgeBase,
+    Document,
+    ModelRegistry,
+    PromptTemplate,
+    Deployment,
+    ChatSession,
+    ChatMessage,
+    HostModelInstance,
+)
 
 config = context.config
 if config.config_file_name is not None:

@@ -24,28 +24,24 @@ from datetime import timezone
 
 router = APIRouter()
 
-# Safe upload: only types the ingest worker can parse; max 50 MB
 ALLOWED_EXTENSIONS = {".txt", ".pdf", ".docx", ".doc", ".html", ".htm"}
 ALLOWED_EXTENSIONS_DOCUMENTATION = {".zip"}
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 
 def _safe_basename(filename: str) -> str:
-    """Return a safe filename (no path, no dangerous chars)."""
     name = os.path.basename(filename or "document").strip() or "document"
     name = re.sub(r"[^\w\s.\-]", "", name)[:200]
     return name or "document"
 
 
 def _format_utc(dt) -> str:
-    """Format a datetime as an ISO 8601 UTC string with Z suffix."""
     if not dt:
         return ""
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     else:
         dt = dt.astimezone(timezone.utc)
-    # Ensure trailing 'Z' for UTC
     s = dt.isoformat()
     if s.endswith("+00:00"):
         s = s[:-6] + "Z"
@@ -206,9 +202,7 @@ async def upload_document(
         (upload_type or "").strip().lower() == "documentation"
         and ext in ALLOWED_EXTENSIONS_DOCUMENTATION
     )
-    if is_documentation_zip:
-        pass  # .zip allowed for documentation upload type
-    elif ext not in ALLOWED_EXTENSIONS:
+    if not is_documentation_zip and ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"File type not allowed. Use: {', '.join(sorted(ALLOWED_EXTENSIONS))} or .zip for documentation.",

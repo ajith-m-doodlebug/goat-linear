@@ -1,8 +1,6 @@
-"""Parse documents and chunk text. Used by ingest worker."""
 import re
 from pathlib import Path
 
-# Strategy IDs and default params for API/docs
 CHUNK_STRATEGIES = ["fixed", "paragraph", "sentence", "recursive"]
 DEFAULT_CHUNK_SIZE = 512
 DEFAULT_CHUNK_OVERLAP = 50
@@ -10,7 +8,6 @@ DEFAULT_STRATEGY = "fixed"
 
 
 def _chunk_fixed(text: str, chunk_size: int = 512, overlap: int = 50) -> list[str]:
-    """Split text into overlapping chunks by character (approx tokens), break at sentence/newline/space."""
     if not text or not text.strip():
         return []
     text = text.strip()
@@ -33,7 +30,6 @@ def _chunk_fixed(text: str, chunk_size: int = 512, overlap: int = 50) -> list[st
 
 
 def _chunk_paragraph(text: str, chunk_size: int = 512, overlap: int = 50) -> list[str]:
-    """Split on double newline, merge paragraphs up to chunk_size with overlap."""
     if not text or not text.strip():
         return []
     text = text.strip()
@@ -48,7 +44,6 @@ def _chunk_paragraph(text: str, chunk_size: int = 512, overlap: int = 50) -> lis
         if current_len + add_len > chunk_size and current:
             chunks.append("\n\n".join(current))
             if overlap > 0 and current:
-                # keep last paragraph(s) for overlap
                 overlap_len = 0
                 keep = []
                 for j in range(len(current) - 1, -1, -1):
@@ -69,7 +64,6 @@ def _chunk_paragraph(text: str, chunk_size: int = 512, overlap: int = 50) -> lis
 
 
 def _chunk_sentence(text: str, chunk_size: int = 512, overlap: int = 50) -> list[str]:
-    """Split into sentences, then group sentences into chunks of ~chunk_size chars with overlap."""
     if not text or not text.strip():
         return []
     text = text.strip()
@@ -106,7 +100,6 @@ def _chunk_sentence(text: str, chunk_size: int = 512, overlap: int = 50) -> list
 
 
 def _chunk_recursive(text: str, chunk_size: int = 512, overlap: int = 50, separators: list[str] | None = None) -> list[str]:
-    """Recursive split: try separators in order, then recurse on oversized segments."""
     if not text or not text.strip():
         return []
     text = text.strip()
@@ -152,10 +145,6 @@ def chunk_text(
     overlap: int | None = None,
     **kwargs,
 ) -> list[str]:
-    """
-    Split text into chunks. strategy: fixed, paragraph, sentence, recursive.
-    chunk_size/overlap: for fixed/paragraph/recursive in characters; for sentence, chunk_size = number of sentences.
-    """
     if not text or not text.strip():
         return []
     strategy = (strategy or DEFAULT_STRATEGY).lower()
@@ -176,7 +165,6 @@ def chunk_text(
 
 
 def extract_text_from_html(html_content: str) -> str:
-    """Extract plain text from HTML string. Used by file parser."""
     if not html_content or not html_content.strip():
         return ""
     try:
@@ -188,7 +176,6 @@ def extract_text_from_html(html_content: str) -> str:
 
 
 def extract_text_from_file(file_path: str) -> str:
-    """Extract raw text from file based on extension."""
     path = Path(file_path)
     suffix = path.suffix.lower()
     if suffix == ".txt":

@@ -1,6 +1,44 @@
-/// <reference types="node" />
+const DEFAULT_API_PORT = "8005";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+function configuredApiPort(): string {
+  const p = (process.env.NEXT_PUBLIC_API_PORT || DEFAULT_API_PORT).trim();
+  return p || DEFAULT_API_PORT;
+}
+
+/**
+ * Base URL for browser → FastAPI. Uses the page hostname + API port (from
+ * `NEXT_PUBLIC_API_PORT`, set at **build** from `RAGLINE_API_PORT` in Compose).
+ * If `NEXT_PUBLIC_API_URL` is set to a full URL (advanced / reverse-proxy), that wins.
+ */
+export function getApiBase(): string {
+  if (typeof window === "undefined") {
+    return (
+      process.env.NEXT_PUBLIC_API_URL?.trim() ||
+      `http://127.0.0.1:${configuredApiPort()}`
+    );
+  }
+
+  const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
+  const port = configuredApiPort();
+  const pageHost = window.location.hostname;
+  const pageIsLocal = pageHost === "localhost" || pageHost === "127.0.0.1";
+
+  if (!configured) {
+    return `${window.location.protocol}//${pageHost}:${port}`;
+  }
+
+  try {
+    const u = new URL(configured);
+    const cfgLocal = u.hostname === "localhost" || u.hostname === "127.0.0.1";
+    if (cfgLocal && !pageIsLocal) {
+      const apiPort = u.port || port;
+      return `${window.location.protocol}//${pageHost}:${apiPort}`;
+    }
+    return configured;
+  } catch {
+    return `${window.location.protocol}//${pageHost}:${port}`;
+  }
+}
 
 export type TokenResponse = {
   access_token: string;
@@ -56,7 +94,7 @@ function getStoredTokens() {
 async function refreshAccessToken(): Promise<boolean> {
   const { refreshToken: ref } = getStoredTokens();
   if (!ref) return false;
-  const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+  const res = await fetch(`${getApiBase()}/api/v1/auth/refresh`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ refresh_token: ref }),
@@ -80,14 +118,15 @@ export async function apiRequest<T>(
   };
   if (token) (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
 
-  let res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const base = getApiBase();
+  let res = await fetch(`${base}${path}`, { ...options, headers });
 
   if (res.status === 401 && path !== "/api/v1/auth/refresh" && path !== "/api/v1/auth/login") {
     const refreshed = await refreshAccessToken();
     if (refreshed) {
       const { accessToken: newToken } = getStoredTokens();
       (headers as Record<string, string>)["Authorization"] = `Bearer ${newToken}`;
-      res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+      res = await fetch(`${base}${path}`, { ...options, headers });
     }
   }
 
@@ -117,7 +156,7 @@ export type SetupStatusResponse = { setup_completed: boolean };
 
 export const setupApi = {
   getStatus: async (): Promise<SetupStatusResponse> => {
-    const r = await fetch(`${API_BASE}/api/v1/setup/status`);
+    const r = await fetch(`${getApiBase()}/api/v1/setup/status`);
     if (!r.ok) {
       throw new Error(`setup status HTTP ${r.status}`);
     }
@@ -132,7 +171,7 @@ export const setupApi = {
     password: string;
     setup_default_prompt: boolean;
   }) =>
-    fetch(`${API_BASE}/api/v1/setup`, {
+    fetch(`${getApiBase()}/api/v1/setup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

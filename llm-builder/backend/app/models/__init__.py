@@ -9,10 +9,11 @@ from app.models.deployment_version import DeploymentVersion
 from app.models.hosted_session_message import HostedSessionMessage
 from app.models.chat import ChatSession, ChatMessage
 from app.models.rag_config_preset import RagConfigPreset
+from app.models.host_model_instance import HostModelInstance
 
 __all__ = [
     "User", "Role", "SystemSettings", "KnowledgeBase", "Document", "DocumentStatus",
     "ModelRegistry", "ModelProvider", "ModelType", "PromptTemplate", "Deployment",
     "DeploymentVersion", "HostedSessionMessage",
-    "ChatSession", "ChatMessage", "RagConfigPreset",
+    "ChatSession", "ChatMessage", "RagConfigPreset", "HostModelInstance",
 ]

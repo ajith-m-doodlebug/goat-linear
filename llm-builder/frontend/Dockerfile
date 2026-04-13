@@ -1,14 +1,17 @@
-# bookworm-slim (glibc): Next.js SWC on linux/arm64 fails on Alpine/musl (gnu binary symbol errors, musl optional often missing).
 FROM node:20-bookworm-slim AS base
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# Inlined into the client bundle at build — runtime `web` env cannot fix wrong API host.
+ARG NEXT_PUBLIC_API_URL=
+ARG NEXT_PUBLIC_API_PORT=8000
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_PORT=$NEXT_PUBLIC_API_PORT
 RUN npm run build
 
-# Dev stage: Linux npm ci baked at /built-deps; entrypoint copies into mounted volume when lock matches
-# (avoids broken trees from npm install inside the volume). If lock differs from image, runs npm ci at start.
+
 FROM node:20-bookworm-slim AS dev
 WORKDIR /built-deps
 COPY package.json package-lock.json* ./

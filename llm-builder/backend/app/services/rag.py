@@ -141,7 +141,6 @@ def _merge_and_take_top_k(
     so chunks that match more question keywords always rank higher. Return top_k chunks.
     Also returns list of payloads (one per chunk) for optional adjacent-context expansion.
     """
-    # text -> (n_matched, score, source, payload)
     best = {}
     for n_matched, point in keyword_scored:
         payload = point.payload or {}
@@ -324,9 +323,8 @@ def run_rag(
                             keyword_scored = fut_kw.result()
                             vector_results = fut_vec.result()
                 except Exception:
-                    pass  # Keep keyword_scored and vector_results (possibly partial) for merge
+                    pass
 
-                # 3) Merge both streams: dedupe by text, score, take top_k total (works with partial results)
                 if keyword_scored or vector_results:
                     context_parts, citations, payloads = _merge_and_take_top_k(
                         keyword_scored,
@@ -334,7 +332,6 @@ def run_rag(
                         keywords,
                         top_k,
                     )
-                    # For documentation chunks: include full file when any chunk from that file is in results
                     context_parts = _expand_context_with_same_file(
                         client,
                         kb.qdrant_collection_name,
@@ -355,14 +352,12 @@ def run_rag(
             ) + "\n\n"
 
         if prompt_template:
-            # Custom prompt: use the deployment's prompt template
             prompt = prompt_template.content.replace("{context}", context).replace("{question}", question)
             if "{memory}" in prompt_template.content:
                 prompt = prompt.replace("{memory}", memory_block)
             else:
                 prompt = memory_block + prompt
         else:
-            # Default prompt when no custom template is set
             prompt = memory_block + DEFAULT_RAG_PROMPT.format(context=context, question=question)
 
         try:
@@ -377,7 +372,6 @@ def run_rag(
                 response_text += " If the API runs in Docker and the model (e.g. Ollama) is on your host, set the model's Endpoint URL to http://host.docker.internal:11434 (Mac/Windows) or add OLLAMA_DEFAULT_URL=http://host.docker.internal:11434 to the app environment."
             if "429" in err_msg or "Too Many Requests" in err_msg:
                 response_text += " Rate limit exceeded; wait a moment or reduce request frequency. Retrieved context is still shown below."
-            # Always return citations so the user can see the chunked context even when the model call failed
         return response_text, citations
     finally:
         db.close()

@@ -10,6 +10,11 @@ import { EmptyState } from "@/app/components/ui/EmptyState";
 import { Modal } from "@/app/components/ui/Modal";
 import { EditIcon, DeleteIcon } from "@/app/components/ui";
 
+function providerLabel(provider: string): string {
+  if (provider === "ragline_self_hosted") return "Ragline (Self Hosted)";
+  return provider;
+}
+
 type Model = {
   id: string;
   name: string;
@@ -140,7 +145,7 @@ export default function ModelsPage() {
 
   return (
     <div>
-      <PageHeader description="Register LLM endpoints (Ollama, vLLM, OpenAI, Anthropic Claude) for use in deployments and chat." />
+      <PageHeader description="Register LLM endpoints (Ollama, vLLM, RAGLine self-hosted, OpenAI, Anthropic Claude) for use in deployments and chat." />
 
       <Modal open={showForm} onClose={() => setShowForm(false)} title="Add model">
         <form onSubmit={createModel} className="space-y-4">
@@ -149,7 +154,13 @@ export default function ModelsPage() {
             <select
               value={form.provider}
               onChange={(e) => {
-                const provider = e.target.value as "ollama" | "vllm" | "openai" | "anthropic" | "custom";
+                const provider = e.target.value as
+                  | "ollama"
+                  | "vllm"
+                  | "ragline_self_hosted"
+                  | "openai"
+                  | "anthropic"
+                  | "custom";
                 setForm((f) => ({
                   ...f,
                   provider,
@@ -176,6 +187,7 @@ export default function ModelsPage() {
             >
               <option value="ollama">Ollama</option>
               <option value="vllm">vLLM</option>
+              <option value="ragline_self_hosted">Ragline (Self Hosted)</option>
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic (Claude)</option>
               <option value="custom">Custom REST</option>
@@ -200,6 +212,8 @@ export default function ModelsPage() {
                   ? "e.g. http://host.docker.internal:11434"
                   : form.provider === "vllm"
                     ? "e.g. http://vllm:8000"
+                    : form.provider === "ragline_self_hosted"
+                      ? "e.g. http://your-server:8010 (OpenAI-compatible base; usually vLLM’s port, not the RAGLine API port unless a proxy serves /v1/ there)"
                     : form.provider === "openai"
                       ? "e.g. https://api.openai.com"
                       : form.provider === "anthropic"
@@ -306,7 +320,7 @@ export default function ModelsPage() {
             {models.length === 0 ? (
               <EmptyState
                 title="No models yet"
-                description="Add an Ollama, vLLM, OpenAI, or Anthropic Claude model to use in deployments and chat."
+                description="Add an Ollama, vLLM, RAGLine self-hosted, OpenAI, or Anthropic Claude model to use in deployments and chat."
                 action={
                   <Button variant="primary" onClick={() => setShowForm(true)}>
                     Add model
@@ -320,7 +334,9 @@ export default function ModelsPage() {
                     <div className="flex justify-between items-start gap-2 flex-wrap">
                       <div className="min-w-0">
                         <span className="font-medium text-slate-800">{m.name}</span>
-                        <span className="text-slate-500 text-sm ml-2">{m.provider} / {m.model_id}</span>
+                        <span className="text-slate-500 text-sm ml-2">
+                          {providerLabel(m.provider)} / {m.model_id}
+                        </span>
                         {m.endpoint_url && (
                           <p className="text-slate-400 text-xs mt-1 truncate max-w-xs" title={m.endpoint_url}>
                             {m.endpoint_url}
