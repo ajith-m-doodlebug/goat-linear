@@ -485,6 +485,10 @@ def chat_completions(body: ChatCompletionRequest):
         resp = client.chat.completions.create(
             model=model_id,
             messages=[{"role": "user", "content": prompt}],
+            extra_body={
+                "enable_thinking": False,
+                "chat_template_kwargs": {"enable_thinking": False},
+            },
         )
         choice = resp.choices[0] if resp.choices else None
         content = choice.message.content if choice and choice.message else ""

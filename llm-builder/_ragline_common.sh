@@ -180,6 +180,21 @@ ragline_host_models_image() {
   echo "${v:-vllm/vllm-openai:latest}"
 }
 
+ragline_host_models_container_prefix() {
+  local v
+  v="$(ragline_env_value_trimmed RAGLINE_HOST_MODELS_CONTAINER_PREFIX)"
+  echo "${v:-llmbuilder-vllm-}"
+}
+
+ragline_host_models_auto_start_enabled() {
+  local v
+  v="$(ragline_env_value_trimmed RAGLINE_HOST_MODELS_AUTO_START)"
+  case "${v,,}" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 ragline_host_models_pull_image_if_missing() {
   local image
   image="$(ragline_host_models_image)"
@@ -193,12 +208,16 @@ ragline_host_models_pull_image_if_missing() {
 }
 
 ragline_host_models_start_stopped_containers() {
-  local image ids
-  image="$(ragline_host_models_image)"
+  local ids id name started skipped prefix
+  if ! ragline_host_models_auto_start_enabled; then
+    echo "[ragline] Host Models auto-start disabled (set RAGLINE_HOST_MODELS_AUTO_START=1 to enable)."
+    return 0
+  fi
+  prefix="$(ragline_host_models_container_prefix)"
   ids="$(
     {
-      docker ps -aq --filter "ancestor=${image}" --filter "status=created"
-      docker ps -aq --filter "ancestor=${image}" --filter "status=exited"
+      docker ps -aq --filter "name=${prefix}" --filter "status=created"
+      docker ps -aq --filter "name=${prefix}" --filter "status=exited"
     } 2>/dev/null | awk 'NF && !seen[$0]++'
   )"
   if [[ -z "$ids" ]]; then
@@ -206,14 +225,26 @@ ragline_host_models_start_stopped_containers() {
     return 0
   fi
   echo "[ragline] Starting existing Host Models containers..."
-  # shellcheck disable=SC2086
-  docker start $ids >/dev/null
+  started=0
+  skipped=0
+  while IFS= read -r id; do
+    [[ -z "$id" ]] && continue
+    name="$(docker inspect --format '{{.Name}}' "$id" 2>/dev/null | sed 's#^/##')"
+    if docker start "$id" >/dev/null 2>&1; then
+      started=$((started + 1))
+      continue
+    fi
+    skipped=$((skipped + 1))
+    echo "[ragline] WARN: Could not start Host Models container ${name:-$id}; leaving it stopped."
+  done <<< "$ids"
+  echo "[ragline] Host Models start summary: started=${started} skipped=${skipped}"
+  return 0
 }
 
 ragline_host_models_stop_running_containers() {
-  local image ids
-  image="$(ragline_host_models_image)"
-  ids="$(docker ps -q --filter "ancestor=${image}" 2>/dev/null || true)"
+  local ids prefix
+  prefix="$(ragline_host_models_container_prefix)"
+  ids="$(docker ps -q --filter "name=${prefix}" 2>/dev/null || true)"
   if [[ -z "$ids" ]]; then
     echo "[ragline] No running Host Models containers to stop."
     return 0

@@ -31,7 +31,7 @@ class ChatMessage(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
-    model: str
+    model: str | None = None
     messages: list[ChatMessage]
     stream: bool = False
     session_id: str | None = None
@@ -61,8 +61,6 @@ def hosted_chat_completions(
     Question = last user message in body.messages.
     Optional session_id in body or X-Session-Id header for conversation memory (when enabled for this version).
     """
-    if not (body.model or "").strip():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="model required")
     if body.stream:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Streaming not supported")
     v = _get_running_version(db, deployment_id)

@@ -13,6 +13,19 @@ def _ollama_default_url() -> str:
     return get_settings().ollama_default_url
 
 
+def _openai_compat_thinking_payload(kwargs: dict) -> dict:
+    """Force disable thinking across OpenAI-compatible providers."""
+    chat_template_kwargs = kwargs.get("chat_template_kwargs") or {}
+    if not isinstance(chat_template_kwargs, dict):
+        chat_template_kwargs = {}
+    chat_template_kwargs = dict(chat_template_kwargs)
+    chat_template_kwargs["enable_thinking"] = False
+    return {
+        "enable_thinking": False,
+        "chat_template_kwargs": chat_template_kwargs,
+    }
+
+
 def _ollama_complete(model_id: str, prompt: str, base_url: str, **kwargs) -> str:
     url = (base_url or _ollama_default_url()).rstrip("/") + "/api/generate"
     with httpx.Client(timeout=120.0) as client:
@@ -48,6 +61,7 @@ def _openai_complete(model_id: str, prompt: str, base_url: str, api_key: str | N
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": kwargs.get("max_tokens", 1024),
                 "temperature": kwargs.get("temperature", 0.7),
+                **_openai_compat_thinking_payload(kwargs),
             },
         )
         r.raise_for_status()
@@ -85,6 +99,7 @@ def _openai_complete_with_images(
                 "messages": [{"role": "user", "content": content}],
                 "max_tokens": kwargs.get("max_tokens", 1024),
                 "temperature": kwargs.get("temperature", 0.7),
+                **_openai_compat_thinking_payload(kwargs),
             },
         )
         r.raise_for_status()
