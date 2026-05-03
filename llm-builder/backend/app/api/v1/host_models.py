@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_admin
@@ -35,6 +36,21 @@ router = APIRouter()
 
 # OpenAI-compatible inference hosted on this stack (e.g. vLLM from Host Models).
 REGISTERED_MODEL_PROVIDER = "ragline_self_hosted"
+
+
+def _allocate_inference_publish_port(db: Session) -> int:
+    floor = max(1025, int(get_settings().host_models_inference_publish_port_floor))
+    mx = db.query(func.max(HostModelInstance.port)).scalar()
+    candidate = max(floor, (mx if mx is not None else floor - 1) + 1)
+    while candidate <= 65535:
+        taken = db.query(HostModelInstance).filter(HostModelInstance.port == candidate).first()
+        if taken is None:
+            return candidate
+        candidate += 1
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="No free TCP ports left for inference containers",
+    )
 
 
 def _to_response(m: HostModelInstance) -> HostModelInstanceResponse:
@@ -74,7 +90,7 @@ def _execute_start(db: Session, instance_id: str) -> HostModelInstance:
         ensure_gpu_available()
         validate_local_path(item)
         item.status = "starting"
-        item.health_message = "Starting vLLM container"
+        item.health_message = "Starting inference container"
         db.commit()
         container_id, base_url = start_instance(item)
         item.container_id = container_id
@@ -90,7 +106,7 @@ def _execute_start(db: Session, instance_id: str) -> HostModelInstance:
             tw = get_settings().host_models_health_timeout_seconds
             item.health_message = (
                 f"/health not ready within {tw}s (large models can exceed this while loading weights). "
-                f"Last: {msg}. Check Logs — if vLLM is still starting, increase HOST_MODELS_HEALTH_TIMEOUT_SECONDS "
+                f"Last: {msg}. Check Logs — if the server is still starting, increase HOST_MODELS_HEALTH_TIMEOUT_SECONDS "
                 "and click Start again (the container will be recreated)."
             )
     except Exception as e:
@@ -100,7 +116,7 @@ def _execute_start(db: Session, instance_id: str) -> HostModelInstance:
         item.container_id = None
         item.base_url = ""
         item.last_log_excerpt = (
-            f"(vLLM container was not created or exited immediately — no docker logs yet)\n{err}"[-50000:]
+            f"(Inference container was not created or exited immediately — no docker logs yet)\n{err}"[-50000:]
         )
     db.commit()
     db.refresh(item)
@@ -133,18 +149,23 @@ def create_host_model(
     db: Session = Depends(get_db),
     user: User = Depends(require_admin),
 ):
-    if db.query(HostModelInstance).filter(HostModelInstance.port == body.port).first():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Port already in use")
+    served = body.served_model_name.strip()
+    if db.query(HostModelInstance).filter(HostModelInstance.served_model_name == served).first():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Served model name already in use (it becomes the OpenAI `model` id)",
+        )
+    publish_port = _allocate_inference_publish_port(db)
     instance = HostModelInstance(
         id=str(uuid.uuid4()),
         name=body.name.strip(),
-        engine="vllm",
+        engine=body.engine,
         model_source="local_path",
         model_ref=body.model_ref.strip(),
-        served_model_name=body.served_model_name.strip(),
+        served_model_name=served,
         gpu_ids=body.gpu_ids.strip() or "0",
         tensor_parallel_size=body.tensor_parallel_size,
-        port=body.port,
+        port=publish_port,
         base_url="",
         api_key=body.api_key,
         status="creating",
@@ -163,7 +184,7 @@ def create_host_model(
     db.refresh(instance)
     if body.autostart:
         instance.status = "starting"
-        instance.health_message = "Starting vLLM container"
+        instance.health_message = "Starting inference container"
         db.commit()
         db.refresh(instance)
         background_tasks.add_task(_background_start_host_model, instance.id)
@@ -213,7 +234,7 @@ def start_host_model(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     item.status = "starting"
-    item.health_message = "Starting vLLM container"
+    item.health_message = "Starting inference container"
     db.commit()
     db.refresh(item)
     background_tasks.add_task(_background_start_host_model, instance_id)
@@ -231,7 +252,7 @@ def stop_host_model(
         item.status = "stopping"
         db.commit()
         stop_instance(item)
-        remove_container(item.id)
+        remove_container(item)
         item.status = "stopped"
         item.health_message = "Stopped"
         item.container_id = None
@@ -337,7 +358,7 @@ def delete_host_model(
 ):
     item = _get_instance(db, instance_id)
     try:
-        remove_container(item.id)
+        remove_container(item)
     except Exception:
         pass
     db.delete(item)

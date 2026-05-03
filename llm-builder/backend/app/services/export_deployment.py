@@ -79,6 +79,10 @@ def build_export_bundle(db: Session, deployment_id: str) -> bytes:
         "api_key_env": "API_KEY" if model.provider in ("openai", "custom") else "",
         "extra": model.config or {},
     }
+    if model.provider == "ragline_self_hosted" and isinstance(model.config, dict):
+        hid = model.config.get("host_model_instance_id")
+        if hid:
+            model_config["host_model_instance_id"] = hid
 
     embedding_model = "all-MiniLM-L6-v2"
     embedding_query_prefix = None

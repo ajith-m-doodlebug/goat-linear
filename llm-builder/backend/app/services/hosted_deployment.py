@@ -48,6 +48,10 @@ def _build_frozen_config(
         "api_key_env": "API_KEY" if model.provider in ("openai", "custom") else "",
         "extra": model.config or {},
     }
+    if model.provider == "ragline_self_hosted" and isinstance(model.config, dict):
+        hid = model.config.get("host_model_instance_id")
+        if hid:
+            model_config["host_model_instance_id"] = hid
     if model.api_key_encrypted:
         model_config["_api_key"] = model.api_key_encrypted
 

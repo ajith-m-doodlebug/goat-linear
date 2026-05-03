@@ -5,8 +5,9 @@ server {
 
     client_max_body_size 100m;
 
+    # Multiplex hosted models by JSON `model` on the API (see app.api.openai_gateway).
     location /v1/ {
-        proxy_pass http://${VLLM_PROXY_HOST}:${VLLM_PROXY_PORT};
+        proxy_pass http://app:8000;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

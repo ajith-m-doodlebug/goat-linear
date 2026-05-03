@@ -12,6 +12,7 @@ from app.core.logging_config import setup_logging
 from app.core.setup_guard import is_setup_completed
 from app.api.v1 import api_router
 from app.api.hosted import router as hosted_router
+from app.api.openai_gateway import router as openai_gateway_router
 from app.db.base import engine, Base
 
 settings = get_settings()
@@ -104,6 +105,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(openai_gateway_router)
 app.include_router(api_router)
 app.include_router(hosted_router, prefix="/hosted", tags=["hosted"])
 

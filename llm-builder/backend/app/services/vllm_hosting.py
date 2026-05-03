@@ -1,15 +1,101 @@
 import os
+import re
 import shlex
 import shutil
 import subprocess
 import time
 from pathlib import Path
+from typing import NamedTuple
+
 from urllib.parse import urlparse
 
 import httpx
 
 from app.core.config import get_settings
 from app.models.host_model_instance import HostModelInstance
+
+
+class _LlamaCppMount(NamedTuple):
+    volume_args: list[str]
+    model_container_path: str
+
+
+def _running_in_container() -> bool:
+    return os.path.exists("/.dockerenv")
+
+
+_SPLIT_GGUF_NAME = re.compile(r"-\d+-of-\d+\.gguf$", re.IGNORECASE)
+
+
+def _is_split_gguf_filename(filename: str) -> bool:
+    """True if basename matches llama.cpp split naming (e.g. foo-00001-of-00009.gguf)."""
+    return bool(filename and _SPLIT_GGUF_NAME.search(filename))
+
+
+def _split_shard_part_index(filename: str) -> int | None:
+    """Return shard index N from ...-N-of-M.gguf, or None if not a split name."""
+    m = re.search(r"-(\d+)-of-\d+\.gguf$", filename, re.IGNORECASE)
+    if not m:
+        return None
+    return int(m.group(1))
+
+
+def _pick_llamacpp_entry_gguf_basename(filenames: list[str], cfg_gguf: str) -> str:
+    """Pick which .gguf llama-server should open (split sets: prefer unique *-00001-of-*.gguf)."""
+    cfg = (cfg_gguf or "").strip()
+    ggufs = sorted(n for n in filenames if n.lower().endswith(".gguf"))
+    if cfg:
+        if cfg not in ggufs:
+            raise RuntimeError(
+                f"llamacpp_gguf {cfg!r} not found in model directory ({len(ggufs)} .gguf file(s) present)"
+            )
+        return cfg
+    first_shards = [n for n in ggufs if _split_shard_part_index(n) == 1]
+    if len(first_shards) == 1:
+        return first_shards[0]
+    if len(ggufs) == 1:
+        return ggufs[0]
+    if not ggufs:
+        raise RuntimeError("No .gguf files in model directory")
+    if len(first_shards) > 1:
+        raise RuntimeError(
+            "Multiple first-shard GGUF files (*-00001-of-*.gguf); set GGUF filename (config llamacpp_gguf)."
+        )
+    raise RuntimeError(
+        "Multiple .gguf files with no unique first split shard; remove extras, merge, or set llamacpp_gguf."
+    )
+
+
+def _docker_list_host_dir_basenames(host_abs_dir: str) -> list[str]:
+    """List filenames on the Docker host using docker run + bind-mount (API may not see host paths)."""
+    host_abs_dir = os.path.normpath(host_abs_dir)
+    if not host_abs_dir.startswith("/"):
+        raise RuntimeError("Model directory must be an absolute host path")
+    img = (get_settings().host_models_docker_ls_image or "").strip() or "busybox:latest"
+    exe = _docker_bin()
+    res = subprocess.run(
+        [
+            exe,
+            "run",
+            "--rm",
+            "-v",
+            f"{host_abs_dir}:/__ragline_ls:ro",
+            img,
+            "ls",
+            "-1",
+            "/__ragline_ls",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if res.returncode != 0:
+        err = (res.stderr or res.stdout or "").strip()
+        raise RuntimeError(
+            f"Could not list host directory {host_abs_dir!r} via Docker ({img}). "
+            f"Pull the image or set HOST_MODELS_DOCKER_LS_IMAGE. {err}"
+        )
+    return [ln.strip() for ln in (res.stdout or "").splitlines() if ln.strip()]
 
 
 def _docker_cmd() -> str:
@@ -60,6 +146,14 @@ def _docker_bin() -> str:
 
 def _image() -> str:
     return get_settings().host_models_vllm_image
+
+
+def _llamacpp_image() -> str:
+    return (get_settings().host_models_llamacpp_image or "").strip() or "ghcr.io/ggml-org/llama.cpp:server-cuda"
+
+
+def _engine(instance: HostModelInstance) -> str:
+    return (instance.engine or "vllm").strip().lower()
 
 
 def _public_base_url() -> str:
@@ -124,15 +218,16 @@ def _parse_gpu_ids(raw: str) -> list[int]:
 def validate_instance_config(instance: HostModelInstance) -> None:
     _ensure_docker_available()
     gpu_ids = _parse_gpu_ids(instance.gpu_ids)
-    if instance.tensor_parallel_size > len(gpu_ids):
+    if _engine(instance) == "vllm" and instance.tensor_parallel_size > len(gpu_ids):
         raise RuntimeError("Tensor parallel size cannot exceed number of GPU IDs")
     hf_cache = _hf_cache_dir()
     if hf_cache and not hf_cache.startswith("/"):
         raise RuntimeError("HF cache dir must be an absolute host path")
 
 
-def _container_name(instance_id: str) -> str:
-    return f"llmbuilder-vllm-{instance_id[:8]}"
+def _container_name(instance: HostModelInstance) -> str:
+    short = instance.id[:8]
+    return f"llmbuilder-llamacpp-{short}" if _engine(instance) == "llama_cpp" else f"llmbuilder-vllm-{short}"
 
 
 def _safe_model_mount_name(model_ref: str) -> str:
@@ -166,9 +261,71 @@ def ensure_gpu_available() -> None:
     )
 
 
-def _build_run_cmd(instance: HostModelInstance) -> list[str]:
+def _llamacpp_mount_and_model_path(instance: HostModelInstance) -> _LlamaCppMount:
+    raw = (instance.model_ref or "").strip()
+    cfg = instance.config or {}
+    cfg_gguf = (cfg.get("llamacpp_gguf") or "").strip()
+    local_raw = Path(raw).expanduser()
+    model_path = local_raw.resolve()
+    if model_path.is_file():
+        if model_path.suffix.lower() != ".gguf":
+            raise RuntimeError("llama.cpp engine requires model_ref to be a .gguf file or a directory containing GGUF weights")
+        if _is_split_gguf_filename(model_path.name):
+            host_dir = model_path.parent.resolve()
+            mount_name = _container_mount_suffix(str(host_dir))
+            container_base = f"/models/{mount_name}"
+            return _LlamaCppMount(
+                volume_args=["-v", f"{host_dir}:{container_base}:ro"],
+                model_container_path=f"{container_base}/{model_path.name}",
+            )
+        container_file = f"/models/{model_path.name}"
+        return _LlamaCppMount(
+            volume_args=["-v", f"{model_path}:{container_file}:ro"],
+            model_container_path=container_file,
+        )
+    if _running_in_container() and not model_path.exists():
+        if raw.lower().endswith(".gguf"):
+            raw_name = Path(raw).name
+            if _is_split_gguf_filename(raw_name):
+                parent_norm = os.path.normpath(str(Path(raw).expanduser().parent))
+                mount_name = _container_mount_suffix(parent_norm)
+                container_base = f"/models/{mount_name}"
+                return _LlamaCppMount(
+                    volume_args=["-v", f"{parent_norm}:{container_base}:ro"],
+                    model_container_path=f"{container_base}/{raw_name}",
+                )
+            container_file = f"/models/{raw_name}" if raw_name else "/models/model.gguf"
+            return _LlamaCppMount(
+                volume_args=["-v", f"{raw}:{container_file}:ro"],
+                model_container_path=container_file,
+            )
+        # Same as vLLM: model_ref is the model subfolder on the Docker host; list files via docker if needed.
+        parent_norm = os.path.normpath(str(Path(raw).expanduser()))
+        names = _docker_list_host_dir_basenames(parent_norm)
+        chosen_name = _pick_llamacpp_entry_gguf_basename(names, cfg_gguf)
+        mount_name = _container_mount_suffix(raw)
+        container_base = f"/models/{mount_name}"
+        return _LlamaCppMount(
+            volume_args=["-v", f"{parent_norm}:{container_base}:ro"],
+            model_container_path=f"{container_base}/{chosen_name}",
+        )
+    if not model_path.is_dir():
+        raise RuntimeError(f"Local model path does not exist: {model_path}")
+
+    names = sorted(p.name for p in model_path.glob("*.gguf"))
+    chosen_name = _pick_llamacpp_entry_gguf_basename(names, cfg_gguf)
+
+    mount_name = _container_mount_suffix(instance.model_ref)
+    container_base = f"/models/{mount_name}"
+    return _LlamaCppMount(
+        volume_args=["-v", f"{str(model_path.resolve())}:{container_base}:ro"],
+        model_container_path=f"{container_base}/{chosen_name}",
+    )
+
+
+def _build_vllm_run_cmd(instance: HostModelInstance) -> list[str]:
     docker = _docker_bin()
-    container_name = _container_name(instance.id)
+    container_name = _container_name(instance)
     cmd = [
         docker,
         "run",
@@ -228,8 +385,55 @@ def _build_run_cmd(instance: HostModelInstance) -> list[str]:
     return cmd
 
 
+def _build_llamacpp_run_cmd(instance: HostModelInstance) -> list[str]:
+    docker = _docker_bin()
+    container_name = _container_name(instance)
+    mount = _llamacpp_mount_and_model_path(instance)
+    cmd = [
+        docker,
+        "run",
+        "-d",
+        "--name",
+        container_name,
+        "--restart",
+        "unless-stopped",
+        "--gpus",
+        f"device={instance.gpu_ids}",
+        "-p",
+        f"{instance.port}:8000",
+    ]
+    cmd.extend(mount.volume_args)
+    cmd.append(_llamacpp_image())
+    cmd.extend(
+        [
+            "-m",
+            mount.model_container_path,
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--alias",
+            instance.served_model_name,
+        ]
+    )
+    cfg = instance.config or {}
+    ctx = cfg.get("llamacpp_ctx_size")
+    if ctx is not None:
+        cmd.extend(["-c", str(int(ctx))])
+    ngl = cfg.get("llamacpp_n_gpu_layers")
+    if ngl is not None:
+        cmd.extend(["--n-gpu-layers", str(int(ngl))])
+    if instance.api_key:
+        cmd.extend(["--api-key", instance.api_key])
+    return cmd
+
+
+def _build_run_cmd(instance: HostModelInstance) -> list[str]:
+    return _build_llamacpp_run_cmd(instance) if _engine(instance) == "llama_cpp" else _build_vllm_run_cmd(instance)
+
+
 def start_instance(instance: HostModelInstance) -> tuple[str, str]:
-    remove_container(instance.id)
+    remove_container(instance)
     cmd = _build_run_cmd(instance)
     container_id = _run(cmd)
     base_url = _client_facing_base_url(instance)
@@ -238,15 +442,15 @@ def start_instance(instance: HostModelInstance) -> tuple[str, str]:
 
 def stop_instance(instance: HostModelInstance) -> None:
     docker = _docker_bin()
-    name = _container_name(instance.id)
+    name = _container_name(instance)
     _run([docker, "stop", name])
 
 
-def remove_container(instance_id: str) -> None:
+def remove_container(instance: HostModelInstance) -> None:
     exe = _resolved_docker_executable()
     if not exe:
         return
-    name = _container_name(instance_id)
+    name = _container_name(instance)
     for slug in (name, f"/{name}"):
         subprocess.run([exe, "rm", "-f", slug], capture_output=True, text=True)
     res = subprocess.run(
@@ -266,7 +470,7 @@ def remove_container(instance_id: str) -> None:
 
 def fetch_logs(instance: HostModelInstance, tail: int = 200) -> str:
     docker = _docker_bin()
-    name = _container_name(instance.id)
+    name = _container_name(instance)
     res = subprocess.run(
         [docker, "logs", "--tail", str(tail), name],
         capture_output=True,
@@ -276,7 +480,7 @@ def fetch_logs(instance: HostModelInstance, tail: int = 200) -> str:
         err = (res.stderr or res.stdout or "").strip()
         if "no such container" in err.lower():
             return (
-                f"No Docker container {name!r} (vLLM may not have started, exited and was removed, or start never succeeded). "
+                f"No Docker container {name!r} (the inference container may not have started, exited and was removed, or start never succeeded). "
                 f"Check the instance health_message, try Start, or on the host run: docker ps -a --filter name={name}\n"
                 f"Docker: {err}"
             )
@@ -284,7 +488,7 @@ def fetch_logs(instance: HostModelInstance, tail: int = 200) -> str:
     return (res.stdout or "")[-10000:]
 
 
-def _vllm_health_url(instance: HostModelInstance) -> str:
+def _inference_health_url(instance: HostModelInstance) -> str:
     """URL for GET /health. Inside the API container, public HOST_MODELS_PUBLIC_BASE_URL:port often
     cannot hairpin to the host; use host.docker.internal (requires compose extra_hosts) or override."""
     settings = get_settings()
@@ -331,7 +535,7 @@ def vllm_endpoint_connect_base(endpoint_url: str | None) -> str | None:
 
 
 def check_health(instance: HostModelInstance, *, read_timeout: float = 20.0) -> tuple[bool, str]:
-    url = _vllm_health_url(instance)
+    url = _inference_health_url(instance)
     try:
         t = httpx.Timeout(read_timeout, connect=10.0)
         with httpx.Client(timeout=t) as client:
@@ -344,7 +548,7 @@ def check_health(instance: HostModelInstance, *, read_timeout: float = 20.0) -> 
 
 
 def wait_for_health_ready(instance: HostModelInstance) -> tuple[bool, str]:
-    """Poll vLLM /health until success or HOST_MODELS_HEALTH_TIMEOUT_SECONDS elapses."""
+    """Poll OpenAI server /health until success or HOST_MODELS_HEALTH_TIMEOUT_SECONDS elapses."""
     settings = get_settings()
     max_wait = max(30, int(settings.host_models_health_timeout_seconds))
     interval = 5
@@ -359,8 +563,20 @@ def wait_for_health_ready(instance: HostModelInstance) -> tuple[bool, str]:
     return False, last_msg or "no response"
 
 
+def inference_internal_http_origin(instance: HostModelInstance) -> str:
+    """scheme://host:port to reach this instance's OpenAI server from the API process (Docker publish port).
+
+    Uses host.docker.internal so traffic hits the host's published -p bindings. Do not reuse
+    HOST_MODELS_HEALTH_PROBE_BASE_URL here: bridge IPs like 172.17.0.1 often fail / refuse while
+    host.docker.internal works for the same port."""
+    if os.path.exists("/.dockerenv"):
+        return f"http://host.docker.internal:{instance.port}"
+    return f"http://127.0.0.1:{instance.port}"
+
+
 def get_instance_endpoint(instance: HostModelInstance) -> str:
-    return f"{instance.base_url.rstrip('/')}/v1/chat/completions"
+    pub = client_facing_base_url(instance).rstrip("/")
+    return f"{pub}/v1/chat/completions"
 
 
 def debug_command_preview(instance: HostModelInstance) -> str:
@@ -383,15 +599,17 @@ def validate_local_path(instance: HostModelInstance) -> None:
         if model_path != prefix_norm and not model_path.startswith(prefix_norm + os.sep):
             raise RuntimeError(f"Local model path must be under {local_prefix}")
 
-    # API often runs in a container without the host model tree mounted; vLLM still bind-mounts
+    # API often runs in a container without the host model tree mounted; Docker still bind-mounts
     # from the Docker *host* at start time. Only assert existence when we see the host FS.
-    if os.path.exists("/.dockerenv"):
+    if _running_in_container():
         return
     p = Path(model_path)
     if not p.exists():
         raise RuntimeError(f"Local model path does not exist: {p}")
     if not os.access(p, os.R_OK):
         raise RuntimeError(f"Local model path is not readable: {p}")
+    if _engine(instance) == "llama_cpp":
+        _llamacpp_mount_and_model_path(instance)
 
 
 def preflight_status() -> dict:
@@ -448,6 +666,13 @@ def preflight_status() -> dict:
         except Exception as e:
             gpu_msg = f"GPU runtime unavailable: {e}"
     checks["gpu_runtime"] = {"ok": gpu_ok, "message": gpu_msg}
+
+    llama_img = _llamacpp_image()
+    checks["llamacpp_image"] = {
+        "ok": True,
+        "message": f"llama.cpp container image configured ({llama_img}); pull on the Docker host before using Host Models → llama.cpp",
+        "value": llama_img,
+    }
 
     all_ok = all(bool(c.get("ok")) for c in checks.values())
     any_ok = any(bool(c.get("ok")) for c in checks.values())

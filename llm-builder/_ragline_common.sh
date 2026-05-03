@@ -201,24 +201,46 @@ ragline_host_models_pull_image_if_missing() {
   echo "[ragline] Host Models image check: ${image}"
   if docker image inspect "$image" >/dev/null 2>&1; then
     echo "[ragline] Host Models image already present."
-    return 0
+  else
+    echo "[ragline] Pulling Host Models image..."
+    docker pull "$image"
   fi
-  echo "[ragline] Pulling Host Models image..."
-  docker pull "$image"
+
+  local pull_llamacpp li_img v
+  v="$(ragline_env_value_trimmed RAGLINE_HOST_MODELS_PULL_LLAMACPP)"
+  case "${v,,}" in
+    1|true|yes|on) pull_llamacpp=1 ;;
+    *) pull_llamacpp=0 ;;
+  esac
+  if [[ "$pull_llamacpp" -eq 1 ]]; then
+    li_img="$(ragline_env_value_trimmed HOST_MODELS_LLAMACPP_IMAGE)"
+    [[ -z "$li_img" ]] && li_img="ghcr.io/ggml-org/llama.cpp:server-cuda"
+    echo "[ragline] Host Models llama.cpp image check: ${li_img}"
+    if docker image inspect "$li_img" >/dev/null 2>&1; then
+      echo "[ragline] llama.cpp server image already present."
+    else
+      echo "[ragline] Pulling llama.cpp server image..."
+      docker pull "$li_img"
+    fi
+  fi
 }
 
 ragline_host_models_start_stopped_containers() {
-  local ids id name started skipped prefix
+  local ids id name started skipped prefix pfx_list
   if ! ragline_host_models_auto_start_enabled; then
     echo "[ragline] Host Models auto-start disabled (set RAGLINE_HOST_MODELS_AUTO_START=1 to enable)."
     return 0
   fi
   prefix="$(ragline_host_models_container_prefix)"
+  pfx_list="$prefix"$'\n'"llmbuilder-llamacpp-"
   ids="$(
     {
-      docker ps -aq --filter "name=${prefix}" --filter "status=created"
-      docker ps -aq --filter "name=${prefix}" --filter "status=exited"
-    } 2>/dev/null | awk 'NF && !seen[$0]++'
+      while IFS= read -r pfx; do
+        [[ -z "$pfx" ]] && continue
+        docker ps -aq --filter "name=${pfx}" --filter "status=created" 2>/dev/null || true
+        docker ps -aq --filter "name=${pfx}" --filter "status=exited" 2>/dev/null || true
+      done <<< "$pfx_list"
+    } | awk 'NF && !seen[$0]++'
   )"
   if [[ -z "$ids" ]]; then
     echo "[ragline] No stopped Host Models containers to start."
@@ -242,9 +264,17 @@ ragline_host_models_start_stopped_containers() {
 }
 
 ragline_host_models_stop_running_containers() {
-  local ids prefix
+  local ids prefix pfx_list
   prefix="$(ragline_host_models_container_prefix)"
-  ids="$(docker ps -q --filter "name=${prefix}" 2>/dev/null || true)"
+  pfx_list="$prefix"$'\n'"llmbuilder-llamacpp-"
+  ids="$(
+    {
+      while IFS= read -r pfx; do
+        [[ -z "$pfx" ]] && continue
+        docker ps -q --filter "name=${pfx}" 2>/dev/null || true
+      done <<< "$pfx_list"
+    } | awk 'NF && !seen[$0]++'
+  )"
   if [[ -z "$ids" ]]; then
     echo "[ragline] No running Host Models containers to stop."
     return 0
@@ -255,7 +285,7 @@ ragline_host_models_stop_running_containers() {
 }
 
 ragline_host_models_precheck() {
-  echo "[ragline] Host Models precheck (vLLM control plane)..."
+  echo "[ragline] Host Models precheck (vLLM / llama.cpp control plane)..."
   echo "[ragline] Published ports from .env: UI $(ragline_ui_port)  API $(ragline_api_port)"
   if [[ ! -S /var/run/docker.sock ]]; then
     echo "[ragline] WARN: /var/run/docker.sock not found on host."

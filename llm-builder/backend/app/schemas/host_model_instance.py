@@ -6,17 +6,18 @@ from pydantic import BaseModel, ConfigDict, Field
 HostModelStatus = Literal["creating", "starting", "healthy", "error", "stopping", "stopped"]
 # API only creates local_path; "hf_repo" may still appear on old rows until deleted.
 HostModelSource = Literal["local_path", "hf_repo"]
+HostModelEngine = Literal["vllm", "llama_cpp"]
 
 
 class HostModelInstanceCreate(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     name: str
+    engine: HostModelEngine = "vllm"
     model_ref: str
     served_model_name: str
     gpu_ids: str = "0"
     tensor_parallel_size: int = Field(default=1, ge=1, le=16)
-    port: int = Field(ge=1025, le=65535)
     api_key: str | None = None
     config: dict[str, Any] | None = None
     autostart: bool = True

@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     # If set, Host Models `base_url` / Register uses this host port (e.g. ingress 8005) while Docker still publishes `instance.port`.
     host_models_register_http_port: int | None = None
     host_models_vllm_image: str = "vllm/vllm-openai:latest"
+    host_models_llamacpp_image: str = "ghcr.io/ggml-org/llama.cpp:server-cuda"
+    # Tiny image used to list host model dirs when the API runs in Docker (same absolute paths as vLLM mounts).
+    host_models_docker_ls_image: str = "busybox:latest"
     host_models_hf_cache_dir: str = "/tmp/hf-cache"
     host_models_docker_cmd: str = "docker"
     host_models_require_docker_socket: bool = True
@@ -41,6 +44,8 @@ class Settings(BaseSettings):
     host_models_health_timeout_seconds: int = 900
     # If set (e.g. http://172.17.0.1), only health probes use this base + instance.port (not public base_url).
     host_models_health_probe_base_url: str | None = None
+    # Auto-assigned Docker publish ports for inference containers start here (Host Models UI no longer picks ports).
+    host_models_inference_publish_port_floor: int = 28010
 
     ragline_ui_port: int = 3000
     ragline_api_port: int = 8005

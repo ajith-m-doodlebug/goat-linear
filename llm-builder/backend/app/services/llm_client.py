@@ -1,4 +1,6 @@
 """Unified LLM client: Ollama, vLLM (OpenAI-compatible), OpenAI, custom REST."""
+from concurrent.futures import ThreadPoolExecutor
+
 import httpx
 from app.core.config import get_settings
 from app.models.model_registry import ModelRegistry
@@ -7,6 +9,38 @@ from app.services.vllm_hosting import vllm_endpoint_connect_base
 # OpenAI-compatible HTTP; colocated Docker hairpin fix applies to self-hosted engines only.
 _OPENAI_COMPAT_PROVIDERS = frozenset({"vllm", "ragline_self_hosted", "openai", "custom"})
 _SELF_HOSTED_OPENAI_COMPAT = frozenset({"vllm", "ragline_self_hosted"})
+
+
+def _openai_compat_server_base(model: ModelRegistry, endpoint_url: str | None) -> str | None:
+    if model.provider in _SELF_HOSTED_OPENAI_COMPAT:
+        return vllm_endpoint_connect_base(endpoint_url) or endpoint_url
+    return endpoint_url
+
+
+def _ragline_multiplex_connect_base(registry_endpoint_url: str | None) -> str:
+    """Same HTTP base as the Models page test and curl: registered Endpoint URL → ingress /v1 multiplex."""
+    raw = (registry_endpoint_url or "").strip().rstrip("/")
+    if not raw:
+        raise RuntimeError(
+            "ragline_self_hosted requires Endpoint URL (e.g. http://YOUR_HOST:8005), matching the Models page."
+        )
+    return (vllm_endpoint_connect_base(raw) or raw).rstrip("/")
+
+
+def _ragline_complete_via_registry_threaded(
+    make_call,
+    registry_endpoint_url: str | None,
+    *,
+    timeout_s: float = 600.0,
+):
+    """POST /v1/chat/completions on the multiplex URL from a worker thread (avoids single-worker deadlock)."""
+    bu = _ragline_multiplex_connect_base(registry_endpoint_url)
+
+    def run():
+        return make_call(bu)
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(run).result(timeout=timeout_s)
 
 
 def _ollama_default_url() -> str:
@@ -216,7 +250,17 @@ def complete(model: ModelRegistry, prompt: str, **extra_config) -> str:
     if model.provider == "anthropic":
         return _anthropic_complete(model_id, prompt, base_url or "https://api.anthropic.com", api_key, **config)
     if model.provider in _OPENAI_COMPAT_PROVIDERS:
-        bu = vllm_endpoint_connect_base(base_url) if model.provider in _SELF_HOSTED_OPENAI_COMPAT else base_url
+        if model.provider == "ragline_self_hosted":
+
+            def _call(bu: str):
+                return _openai_complete(model_id, prompt, bu, api_key, **config)
+
+            return _ragline_complete_via_registry_threaded(_call, base_url)
+        bu = (
+            _openai_compat_server_base(model, base_url)
+            if model.provider in _SELF_HOSTED_OPENAI_COMPAT
+            else base_url
+        )
         return _openai_complete(model_id, prompt, bu, api_key, **config)
     raise ValueError(f"Unsupported provider: {model.provider}")
 
@@ -240,7 +284,17 @@ def complete_with_images(model: ModelRegistry, prompt: str, images: list[dict], 
             model_id, prompt, base_url or "https://api.anthropic.com", api_key, images, **config
         )
     if model.provider in _OPENAI_COMPAT_PROVIDERS:
-        bu = vllm_endpoint_connect_base(base_url) if model.provider in _SELF_HOSTED_OPENAI_COMPAT else base_url
+        if model.provider == "ragline_self_hosted":
+
+            def _call(bu: str):
+                return _openai_complete_with_images(model_id, prompt, bu, api_key, images, **config)
+
+            return _ragline_complete_via_registry_threaded(_call, base_url)
+        bu = (
+            _openai_compat_server_base(model, base_url)
+            if model.provider in _SELF_HOSTED_OPENAI_COMPAT
+            else base_url
+        )
         return _openai_complete_with_images(model_id, prompt, bu, api_key, images, **config)
     raise ValueError(f"Unsupported provider: {model.provider}")
 
@@ -254,7 +308,8 @@ def complete_from_frozen_config(model_config: dict, prompt: str, **extra_config)
     if api_key is None and provider in ("openai", "custom"):
         api_key_env = model_config.get("api_key_env") or "API_KEY"
         api_key = os.environ.get(api_key_env)
-    extra = model_config.get("extra") or {}
+    raw_ex = model_config.get("extra") or {}
+    extra = dict(raw_ex) if isinstance(raw_ex, dict) else {}
     extra.update(extra_config)
 
     if provider == "ollama":
@@ -263,7 +318,17 @@ def complete_from_frozen_config(model_config: dict, prompt: str, **extra_config)
         api_key = api_key or os.environ.get(model_config.get("api_key_env") or "ANTHROPIC_API_KEY")
         return _anthropic_complete(model_id, prompt, base_url or "https://api.anthropic.com", api_key, **extra)
     if provider in _OPENAI_COMPAT_PROVIDERS:
-        bu = vllm_endpoint_connect_base(base_url) if provider in _SELF_HOSTED_OPENAI_COMPAT else base_url
+        if provider == "ragline_self_hosted":
+
+            def _call(bu: str):
+                return _openai_complete(model_id, prompt, bu, api_key, **extra)
+
+            return _ragline_complete_via_registry_threaded(_call, base_url)
+        bu = (
+            vllm_endpoint_connect_base(base_url) or base_url
+            if provider in _SELF_HOSTED_OPENAI_COMPAT
+            else base_url
+        )
         return _openai_complete(model_id, prompt, bu, api_key, **extra)
     raise ValueError(f"Unsupported provider: {provider}")
 
@@ -282,7 +347,8 @@ def complete_from_frozen_config_with_images(
     if api_key is None and provider in ("openai", "custom"):
         api_key_env = model_config.get("api_key_env") or "API_KEY"
         api_key = os.environ.get(api_key_env)
-    extra = model_config.get("extra") or {}
+    raw_ex = model_config.get("extra") or {}
+    extra = dict(raw_ex) if isinstance(raw_ex, dict) else {}
     extra.update(extra_config)
     imgs_b64 = [im.get("data", "") for im in images]
 
@@ -296,7 +362,17 @@ def complete_from_frozen_config_with_images(
             model_id, prompt, base_url or "https://api.anthropic.com", api_key, images, **extra
         )
     if provider in _OPENAI_COMPAT_PROVIDERS:
-        bu = vllm_endpoint_connect_base(base_url) if provider in _SELF_HOSTED_OPENAI_COMPAT else base_url
+        if provider == "ragline_self_hosted":
+
+            def _call(bu: str):
+                return _openai_complete_with_images(model_id, prompt, bu, api_key, images, **extra)
+
+            return _ragline_complete_via_registry_threaded(_call, base_url)
+        bu = (
+            vllm_endpoint_connect_base(base_url) or base_url
+            if provider in _SELF_HOSTED_OPENAI_COMPAT
+            else base_url
+        )
         return _openai_complete_with_images(model_id, prompt, bu, api_key, images, **extra)
     raise ValueError(f"Unsupported provider: {provider}")
 
@@ -315,11 +391,10 @@ def health_check(model: ModelRegistry) -> bool:
     if model.provider in _OPENAI_COMPAT_PROVIDERS and model.endpoint_url:
         try:
             raw = model.endpoint_url.rstrip("/")
-            base = (
-                (vllm_endpoint_connect_base(raw) or raw).rstrip("/")
-                if model.provider in _SELF_HOSTED_OPENAI_COMPAT
-                else raw
-            )
+            if model.provider in _SELF_HOSTED_OPENAI_COMPAT:
+                base = (_openai_compat_server_base(model, model.endpoint_url) or raw).rstrip("/")
+            else:
+                base = raw
             # /health on the public port may be RAGLine (ingress); vLLM always exposes GET /v1/models.
             probe = f"{base}/v1/models" if model.provider in _SELF_HOSTED_OPENAI_COMPAT else base
             with httpx.Client(timeout=5.0) as client:

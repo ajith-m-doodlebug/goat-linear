@@ -10,6 +10,8 @@ import { EmptyState } from "@/app/components/ui/EmptyState";
 import { Modal } from "@/app/components/ui/Modal";
 import { DeleteIcon, PlayIcon, StopIcon } from "@/app/components/ui";
 
+type HostEngine = "vllm" | "llama_cpp";
+
 type HostModel = {
   id: string;
   name: string;
@@ -19,6 +21,7 @@ type HostModel = {
   served_model_name: string;
   gpu_ids: string;
   tensor_parallel_size: number;
+  /** Docker-published port on the host (auto-assigned; clients use API ingress + `model`). */
   port: number;
   base_url: string;
   status: "creating" | "starting" | "healthy" | "error" | "stopping" | "stopped";
@@ -36,18 +39,21 @@ export default function HostModelsPage() {
   const [registeringId, setRegisteringId] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string>("");
   const [form, setForm] = useState({
+    engine: "vllm" as HostEngine,
     name: "",
     model_ref: "",
     served_model_name: "",
     gpu_ids: "0",
     tensor_parallel_size: 1,
-    port: 8010,
     api_key: "",
     autostart: true,
     gpu_memory_utilization: "",
     max_model_len: "",
     dtype: "",
     trust_remote_code: true,
+    llamacpp_ctx_size: "",
+    llamacpp_n_gpu_layers: "",
+    llamacpp_gguf: "",
   });
 
   useTopBar(
@@ -85,39 +91,55 @@ export default function HostModelsPage() {
     e.preventDefault();
     setCreateError("");
     try {
+      const config =
+        form.engine === "vllm"
+          ? {
+              gpu_memory_utilization: form.gpu_memory_utilization ? Number(form.gpu_memory_utilization) : undefined,
+              max_model_len: form.max_model_len ? Number(form.max_model_len) : undefined,
+              dtype: form.dtype || undefined,
+              trust_remote_code: form.trust_remote_code,
+            }
+          : {
+              llamacpp_ctx_size: form.llamacpp_ctx_size ? Number(form.llamacpp_ctx_size) : undefined,
+              llamacpp_n_gpu_layers:
+                form.llamacpp_n_gpu_layers.trim() !== "" ? Number(form.llamacpp_n_gpu_layers) : undefined,
+              llamacpp_gguf: form.llamacpp_gguf.trim() || undefined,
+            };
+      const configPayload = Object.fromEntries(
+        Object.entries(config).filter(([, v]) => v !== undefined && v !== "")
+      ) as Record<string, unknown>;
+
       await apiRequest("/api/v1/host-models", {
         method: "POST",
         body: JSON.stringify({
           name: form.name || form.served_model_name,
+          engine: form.engine,
           model_ref: form.model_ref,
           served_model_name: form.served_model_name,
           gpu_ids: form.gpu_ids,
           tensor_parallel_size: form.tensor_parallel_size,
-          port: form.port,
           api_key: form.api_key || null,
           autostart: form.autostart,
-          config: {
-            gpu_memory_utilization: form.gpu_memory_utilization ? Number(form.gpu_memory_utilization) : undefined,
-            max_model_len: form.max_model_len ? Number(form.max_model_len) : undefined,
-            dtype: form.dtype || undefined,
-            trust_remote_code: form.trust_remote_code,
-          },
+          config: Object.keys(configPayload).length ? configPayload : undefined,
         }),
       });
       setShowForm(false);
       setForm({
+        engine: "vllm",
         name: "",
         model_ref: "",
         served_model_name: "",
         gpu_ids: "0",
         tensor_parallel_size: 1,
-        port: 8010,
         api_key: "",
         autostart: true,
         gpu_memory_utilization: "",
         max_model_len: "",
         dtype: "",
         trust_remote_code: true,
+        llamacpp_ctx_size: "",
+        llamacpp_n_gpu_layers: "",
+        llamacpp_gguf: "",
       });
       await load();
     } catch (err) {
@@ -206,22 +228,50 @@ export default function HostModelsPage() {
 
   return (
     <div>
-      <PageHeader description="Launch and manage GPU model instances from host model directories." />
+      <PageHeader description="Launch vLLM or llama.cpp on the host. Call every model at the same URL (your API ingress): POST …/v1/chat/completions — set JSON model to each instance’s served model name." />
 
       <Modal open={showForm} onClose={() => setShowForm(false)} title="Host model">
         <form onSubmit={create} className="space-y-4">
+          <div>
+            <span className="label">Runtime</span>
+            <div className="mt-2 flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="host-engine"
+                  checked={form.engine === "vllm"}
+                  onChange={() => setForm((f) => ({ ...f, engine: "vllm" }))}
+                />
+                vLLM
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="host-engine"
+                  checked={form.engine === "llama_cpp"}
+                  onChange={() => setForm((f) => ({ ...f, engine: "llama_cpp", tensor_parallel_size: 1 }))}
+                />
+                llama.cpp
+              </label>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Use the same per-model folder path as vLLM (absolute on the Docker host). llama.cpp loads <code className="text-[11px]">.gguf</code> there—single file, merged weights, or split shards (opens <code className="text-[11px]">…-00001-of-….gguf</code> automatically when unambiguous).
+            </p>
+          </div>
           <div>
             <label className="label">Name</label>
             <input className="input" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Sarvam 30B (GPU0)" />
           </div>
           <div>
             <label className="label">Model directory (Docker host)</label>
-            <p className="text-xs text-slate-500 mb-1">Absolute path on the machine where Docker runs (not inside the API container).</p>
+            <p className="text-xs text-slate-500 mb-1">
+              Absolute path on the machine where Docker runs (same idea for vLLM and llama.cpp). For llama.cpp you may instead use a single <code className="text-[11px]">.gguf</code> file path.
+            </p>
             <input
               className="input"
               value={form.model_ref}
               onChange={(e) => setForm((f) => ({ ...f, model_ref: e.target.value }))}
-              placeholder="/data/models/Meta-Llama-3-8B-Instruct"
+              placeholder={form.engine === "llama_cpp" ? "/data/models/sarvam-105b-gguf" : "/data/models/Meta-Llama-3-8B-Instruct"}
               required
             />
           </div>
@@ -234,34 +284,55 @@ export default function HostModelsPage() {
               <label className="label">GPU IDs</label>
               <input className="input" value={form.gpu_ids} onChange={(e) => setForm((f) => ({ ...f, gpu_ids: e.target.value }))} placeholder="0 or 0,1" required />
             </div>
-            <div>
-              <label className="label">Tensor parallel</label>
-              <input type="number" className="input" min={1} max={16} value={form.tensor_parallel_size} onChange={(e) => setForm((f) => ({ ...f, tensor_parallel_size: Number(e.target.value) || 1 }))} />
-            </div>
+            {form.engine === "vllm" ? (
+              <div>
+                <label className="label">Tensor parallel</label>
+                <input type="number" className="input" min={1} max={16} value={form.tensor_parallel_size} onChange={(e) => setForm((f) => ({ ...f, tensor_parallel_size: Number(e.target.value) || 1 }))} />
+              </div>
+            ) : (
+              <div>
+                <label className="label">Tensor parallel</label>
+                <p className="text-xs text-slate-500 mb-1">Not used by llama.cpp in this setup (GPU visibility follows GPU IDs).</p>
+                <input type="number" className="input opacity-60" min={1} max={16} value={1} disabled readOnly />
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="label">Host port (Docker publish)</label>
-              <p className="text-xs text-slate-500 mb-1">
-                TCP port on the Docker host for this model container (e.g. 8010). This is not necessarily the same as the public ingress port in .env (HOST_MODELS_REGISTER_HTTP_PORT).
-              </p>
-              <input type="number" className="input" min={1025} max={65535} value={form.port} onChange={(e) => setForm((f) => ({ ...f, port: Number(e.target.value) || 8010 }))} required />
-            </div>
-            <div>
-              <label className="label">Dtype (optional)</label>
-              <input className="input" value={form.dtype} onChange={(e) => setForm((f) => ({ ...f, dtype: e.target.value }))} placeholder="auto / float16 / bfloat16" />
-            </div>
+            {form.engine === "vllm" ? (
+              <div>
+                <label className="label">Dtype (optional)</label>
+                <input className="input" value={form.dtype} onChange={(e) => setForm((f) => ({ ...f, dtype: e.target.value }))} placeholder="auto / float16 / bfloat16" />
+              </div>
+            ) : (
+              <div>
+                <label className="label">GGUF filename (optional)</label>
+                <input className="input" value={form.llamacpp_gguf} onChange={(e) => setForm((f) => ({ ...f, llamacpp_gguf: e.target.value }))} placeholder="Only if several .gguf in folder" />
+              </div>
+            )}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="label">GPU mem util (optional)</label>
-              <input className="input" value={form.gpu_memory_utilization} onChange={(e) => setForm((f) => ({ ...f, gpu_memory_utilization: e.target.value }))} placeholder="e.g. 0.9" />
+          {form.engine === "vllm" ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="label">GPU mem util (optional)</label>
+                <input className="input" value={form.gpu_memory_utilization} onChange={(e) => setForm((f) => ({ ...f, gpu_memory_utilization: e.target.value }))} placeholder="e.g. 0.9" />
+              </div>
+              <div>
+                <label className="label">Max model len (optional)</label>
+                <input className="input" value={form.max_model_len} onChange={(e) => setForm((f) => ({ ...f, max_model_len: e.target.value }))} placeholder="e.g. 8192" />
+              </div>
             </div>
-            <div>
-              <label className="label">Max model len (optional)</label>
-              <input className="input" value={form.max_model_len} onChange={(e) => setForm((f) => ({ ...f, max_model_len: e.target.value }))} placeholder="e.g. 8192" />
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="label">Context size (optional)</label>
+                <input className="input" value={form.llamacpp_ctx_size} onChange={(e) => setForm((f) => ({ ...f, llamacpp_ctx_size: e.target.value }))} placeholder="-c e.g. 8192" />
+              </div>
+              <div>
+                <label className="label">GPU layers (optional)</label>
+                <input className="input" value={form.llamacpp_n_gpu_layers} onChange={(e) => setForm((f) => ({ ...f, llamacpp_n_gpu_layers: e.target.value }))} placeholder="--n-gpu-layers e.g. 99" />
+              </div>
             </div>
-          </div>
+          )}
           <div>
             <label className="label">API key (optional)</label>
             <input className="input" value={form.api_key} onChange={(e) => setForm((f) => ({ ...f, api_key: e.target.value }))} placeholder="If set, required by the model endpoint" />
@@ -270,10 +341,12 @@ export default function HostModelsPage() {
             <input type="checkbox" checked={form.autostart} onChange={(e) => setForm((f) => ({ ...f, autostart: e.target.checked }))} />
             <span className="text-sm text-slate-600">Start immediately after create</span>
           </div>
-          <div className="flex items-center gap-2">
-            <input type="checkbox" checked={form.trust_remote_code} onChange={(e) => setForm((f) => ({ ...f, trust_remote_code: e.target.checked }))} />
-            <span className="text-sm text-slate-600">trust_remote_code</span>
-          </div>
+          {form.engine === "vllm" ? (
+            <div className="flex items-center gap-2">
+              <input type="checkbox" checked={form.trust_remote_code} onChange={(e) => setForm((f) => ({ ...f, trust_remote_code: e.target.checked }))} />
+              <span className="text-sm text-slate-600">trust_remote_code (vLLM)</span>
+            </div>
+          ) : null}
           {createError && <p className="text-sm text-red-600">{createError}</p>}
           <div className="flex gap-2 pt-2">
             <Button type="submit" variant="primary">Create</Button>
@@ -311,6 +384,9 @@ export default function HostModelsPage() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-slate-800">{r.name}</span>
+                        <span className="inline-flex px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600 border border-[var(--border)]">
+                          {r.engine === "llama_cpp" ? "llama.cpp" : "vLLM"}
+                        </span>
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-xs ${statusPill(r.status)}`}>{r.status}</span>
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
@@ -321,12 +397,13 @@ export default function HostModelsPage() {
                         )}
                       </p>
                       <p className="text-xs text-slate-500">
-                        model: {r.served_model_name} · gpu: {r.gpu_ids} · tp: {r.tensor_parallel_size} · host port: {r.port}
+                        Model: <span className="font-medium text-slate-700">{r.served_model_name}</span>
+                        {" "}· gpu: {r.gpu_ids} · tp: {r.tensor_parallel_size}
                       </p>
                       {r.base_url && (
                         <>
-                          <p className="text-xs text-slate-600 mt-1 break-all" title="Use this base for Register in Models when ingress is enabled">
-                            <span className="text-slate-500">Client URL </span>
+                          <p className="text-xs text-slate-600 mt-1 break-all" title="Same URL for every hosted model; pick the model in the JSON body">
+                            <span className="text-slate-500">POST </span>
                             {r.base_url}/v1/chat/completions
                           </p>
                         </>
