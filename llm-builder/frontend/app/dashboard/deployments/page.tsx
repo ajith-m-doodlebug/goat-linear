@@ -15,6 +15,7 @@ type Deployment = {
   name: string;
   model_id: string;
   knowledge_base_id: string | null;
+  intent_mapper_id: string | null;
   prompt_template_id: string | null;
   is_hosted: boolean;
   live_version: string | null;
@@ -36,12 +37,14 @@ type DeploymentVersion = {
 
 type Model = { id: string; name: string; model_id: string };
 type KnowledgeBase = { id: string; name: string };
+type IntentMapper = { id: string; name: string };
 type PromptTemplate = { id: string; name: string };
 
 export default function DeploymentsPage() {
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [models, setModels] = useState<Model[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [intentMappers, setIntentMappers] = useState<IntentMapper[]>([]);
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -52,14 +55,18 @@ export default function DeploymentsPage() {
   const [form, setForm] = useState({
     name: "",
     model_id: "",
+    retrieval: "none" as "none" | "kb" | "intent",
     knowledge_base_id: "",
+    intent_mapper_id: "",
     prompt_template_id: "",
   });
   const [editDeploymentId, setEditDeploymentId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
     name: "",
     model_id: "",
+    retrieval: "none" as "none" | "kb" | "intent",
     knowledge_base_id: "",
+    intent_mapper_id: "",
     prompt_template_id: "",
   });
   const [exportingId, setExportingId] = useState<string | null>(null);
@@ -130,15 +137,17 @@ export default function DeploymentsPage() {
 
   const load = async () => {
     try {
-      const [deps, mods, kbs, tmpls] = await Promise.all([
+      const [deps, mods, kbs, imappers, tmpls] = await Promise.all([
         apiRequest<Deployment[]>("/api/v1/deployments"),
         apiRequest<Model[]>("/api/v1/models"),
         apiRequest<KnowledgeBase[]>("/api/v1/knowledge-bases"),
+        apiRequest<IntentMapper[]>("/api/v1/intent-mappers"),
         apiRequest<PromptTemplate[]>("/api/v1/deployments/prompt-templates"),
       ]);
       setDeployments(deps);
       setModels(mods);
       setKnowledgeBases(kbs);
+      setIntentMappers(imappers);
       setTemplates(tmpls);
       if (mods.length && !form.model_id) setForm((f) => ({ ...f, model_id: mods[0].id }));
     } catch (e) {
@@ -167,7 +176,8 @@ export default function DeploymentsPage() {
         body: JSON.stringify({
           name: form.name,
           model_id: form.model_id,
-          knowledge_base_id: form.knowledge_base_id || null,
+          knowledge_base_id: form.retrieval === "kb" ? form.knowledge_base_id || null : null,
+          intent_mapper_id: form.retrieval === "intent" ? form.intent_mapper_id || null : null,
           prompt_template_id: form.prompt_template_id || null,
         }),
       });
@@ -205,7 +215,8 @@ export default function DeploymentsPage() {
         body: JSON.stringify({
           name: editForm.name,
           model_id: editForm.model_id,
-          knowledge_base_id: editForm.knowledge_base_id || null,
+          knowledge_base_id: editForm.retrieval === "kb" ? editForm.knowledge_base_id || null : null,
+          intent_mapper_id: editForm.retrieval === "intent" ? editForm.intent_mapper_id || null : null,
           prompt_template_id: editForm.prompt_template_id || null,
         }),
       });
@@ -356,7 +367,7 @@ export default function DeploymentsPage() {
 
   return (
     <div className="w-full">
-      <PageHeader description="Pair a model with an optional knowledge base. Deploy to get a stable API URL, or export as a zip. Select a deployment to view versions." />
+      <PageHeader description="Pair a model with a knowledge base (classic RAG) or an intent mapper (routed retrieval). Not both. Deploy to get a stable API URL, or export as a zip." />
 
       <Modal open={showForm} onClose={() => setShowForm(false)} title="New deployment">
         <form onSubmit={createDeployment} className="space-y-4">
@@ -385,18 +396,61 @@ export default function DeploymentsPage() {
               ))}
             </select>
           </div>
-          <div>
-            <label className="label">Knowledge base (optional)</label>
-            <select
-              value={form.knowledge_base_id}
-              onChange={(e) => setForm((f) => ({ ...f, knowledge_base_id: e.target.value }))}
-              className="input"
-            >
-              <option value="">None</option>
-              {knowledgeBases.map((kb) => (
-                <option key={kb.id} value={kb.id}>{kb.name}</option>
-              ))}
-            </select>
+          <div className="space-y-2">
+            <span className="label">Retrieval</span>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="retrieval-new"
+                  checked={form.retrieval === "none"}
+                  onChange={() => setForm((f) => ({ ...f, retrieval: "none", knowledge_base_id: "", intent_mapper_id: "" }))}
+                />
+                None (model only)
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="retrieval-new"
+                  checked={form.retrieval === "kb"}
+                  onChange={() => setForm((f) => ({ ...f, retrieval: "kb", intent_mapper_id: "" }))}
+                />
+                Knowledge base
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="retrieval-new"
+                  checked={form.retrieval === "intent"}
+                  onChange={() => setForm((f) => ({ ...f, retrieval: "intent", knowledge_base_id: "" }))}
+                />
+                Intent mapper
+              </label>
+            </div>
+            {form.retrieval === "kb" && (
+              <select
+                value={form.knowledge_base_id}
+                onChange={(e) => setForm((f) => ({ ...f, knowledge_base_id: e.target.value }))}
+                className="input mt-2"
+              >
+                <option value="">Select knowledge base</option>
+                {knowledgeBases.map((kb) => (
+                  <option key={kb.id} value={kb.id}>{kb.name}</option>
+                ))}
+              </select>
+            )}
+            {form.retrieval === "intent" && (
+              <select
+                value={form.intent_mapper_id}
+                onChange={(e) => setForm((f) => ({ ...f, intent_mapper_id: e.target.value }))}
+                className="input mt-2"
+              >
+                <option value="">Select intent mapper</option>
+                {intentMappers.map((im) => (
+                  <option key={im.id} value={im.id}>{im.name}</option>
+                ))}
+              </select>
+            )}
           </div>
           <div>
             <label className="label">Prompt template (optional)</label>
@@ -567,18 +621,61 @@ export default function DeploymentsPage() {
               ))}
             </select>
           </div>
-          <div>
-            <label className="label">Knowledge base (optional)</label>
-            <select
-              value={editForm.knowledge_base_id}
-              onChange={(e) => setEditForm((f) => ({ ...f, knowledge_base_id: e.target.value }))}
-              className="input"
-            >
-              <option value="">None</option>
-              {knowledgeBases.map((kb) => (
-                <option key={kb.id} value={kb.id}>{kb.name}</option>
-              ))}
-            </select>
+          <div className="space-y-2">
+            <span className="label">Retrieval</span>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="retrieval-edit"
+                  checked={editForm.retrieval === "none"}
+                  onChange={() => setEditForm((f) => ({ ...f, retrieval: "none", knowledge_base_id: "", intent_mapper_id: "" }))}
+                />
+                None (model only)
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="retrieval-edit"
+                  checked={editForm.retrieval === "kb"}
+                  onChange={() => setEditForm((f) => ({ ...f, retrieval: "kb", intent_mapper_id: "" }))}
+                />
+                Knowledge base
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="retrieval-edit"
+                  checked={editForm.retrieval === "intent"}
+                  onChange={() => setEditForm((f) => ({ ...f, retrieval: "intent", knowledge_base_id: "" }))}
+                />
+                Intent mapper
+              </label>
+            </div>
+            {editForm.retrieval === "kb" && (
+              <select
+                value={editForm.knowledge_base_id}
+                onChange={(e) => setEditForm((f) => ({ ...f, knowledge_base_id: e.target.value }))}
+                className="input mt-2"
+              >
+                <option value="">Select knowledge base</option>
+                {knowledgeBases.map((kb) => (
+                  <option key={kb.id} value={kb.id}>{kb.name}</option>
+                ))}
+              </select>
+            )}
+            {editForm.retrieval === "intent" && (
+              <select
+                value={editForm.intent_mapper_id}
+                onChange={(e) => setEditForm((f) => ({ ...f, intent_mapper_id: e.target.value }))}
+                className="input mt-2"
+              >
+                <option value="">Select intent mapper</option>
+                {intentMappers.map((im) => (
+                  <option key={im.id} value={im.id}>{im.name}</option>
+                ))}
+              </select>
+            )}
           </div>
           <div>
             <label className="label">Prompt template (optional)</label>
@@ -682,7 +779,9 @@ export default function DeploymentsPage() {
                             setEditForm({
                               name: d.name,
                               model_id: d.model_id,
+                              retrieval: d.intent_mapper_id ? "intent" : d.knowledge_base_id ? "kb" : "none",
                               knowledge_base_id: d.knowledge_base_id ?? "",
+                              intent_mapper_id: d.intent_mapper_id ?? "",
                               prompt_template_id: d.prompt_template_id ?? "",
                             });
                           }}

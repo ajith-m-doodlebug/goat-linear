@@ -10,10 +10,12 @@ from app.models.hosted_session_message import HostedSessionMessage
 from app.models.chat import ChatSession, ChatMessage
 from app.models.rag_config_preset import RagConfigPreset
 from app.models.host_model_instance import HostModelInstance
+from app.models.intent_mapper import IntentMapper, IntentMapperDocument
 
 __all__ = [
     "User", "Role", "SystemSettings", "KnowledgeBase", "Document", "DocumentStatus",
     "ModelRegistry", "ModelProvider", "ModelType", "PromptTemplate", "Deployment",
     "DeploymentVersion", "HostedSessionMessage",
     "ChatSession", "ChatMessage", "RagConfigPreset", "HostModelInstance",
+    "IntentMapper", "IntentMapperDocument",
 ]

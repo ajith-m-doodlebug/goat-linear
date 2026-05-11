@@ -13,6 +13,7 @@ type Deployment = {
   id: string;
   name: string;
   knowledge_base_id?: string | null;
+  intent_mapper_id?: string | null;
   has_hosted_versions?: boolean;
   hosted_status?: "live" | "stopped" | null;
 };
@@ -202,7 +203,9 @@ export default function DashboardPage() {
   const { knowledgeBases, models, deployments, sessions } = d;
   const hostedLive = deployments.filter((x) => x.hosted_status === "live").length;
   const hostedStopped = deployments.filter((x) => x.hosted_status === "stopped").length;
-  const deploymentsWithRag = deployments.filter((dep) => dep.knowledge_base_id != null).length;
+  const deploymentsWithRag = deployments.filter(
+    (dep) => dep.knowledge_base_id != null || dep.intent_mapper_id != null
+  ).length;
   const recentSessions = [...sessions].sort(
     (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
   ).slice(0, 5);

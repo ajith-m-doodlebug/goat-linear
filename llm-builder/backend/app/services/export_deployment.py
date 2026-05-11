@@ -20,8 +20,28 @@ from app.models.knowledge_base import KnowledgeBase
 from app.models.model_registry import ModelRegistry
 from app.models.prompt_template import PromptTemplate
 from app.schemas.rag_config import resolve_embedding_for_kb
+from app.services.hosted_deployment import _build_frozen_config
+from app.services.document_crypto import decrypt_secret
 from app.services.qdrant_client import get_qdrant
 from app.services.rag import DEFAULT_RAG_PROMPT
+
+
+def _prepare_export_intent_snapshot(export_config: dict) -> None:
+    """Decrypted DB passwords for export bundle only (zip); not used in hosted frozen JSON in DB."""
+    snap = export_config.get("intent_snapshot")
+    if not snap:
+        return
+    new_docs = []
+    for d in snap.get("documents") or []:
+        d2 = dict(d)
+        cfg = dict(d2.get("config") or {})
+        if d2.get("source_type") == "database" and cfg.get("password_encrypted"):
+            cfg["password_plain_export"] = decrypt_secret(cfg["password_encrypted"])
+        d2["config"] = cfg
+        new_docs.append(d2)
+    snap2 = dict(snap)
+    snap2["documents"] = new_docs
+    export_config["intent_snapshot"] = snap2
 
 
 def _get_points_from_collection(collection_name: str) -> list[dict]:
@@ -61,63 +81,23 @@ def build_export_bundle(db: Session, deployment_id: str) -> bytes:
     dep = db.query(Deployment).filter(Deployment.id == deployment_id).first()
     if not dep:
         raise ValueError("Deployment not found")
-    model = db.query(ModelRegistry).filter(ModelRegistry.id == dep.model_id).first()
-    if not model:
-        raise ValueError("Model not found")
-
-    top_k = 10
-    prompt_text = DEFAULT_RAG_PROMPT
-    if dep.prompt_template_id:
-        pt = db.query(PromptTemplate).filter(PromptTemplate.id == dep.prompt_template_id).first()
-        if pt:
-            prompt_text = pt.content
-
-    model_config = {
-        "provider": model.provider,
-        "endpoint_url": model.endpoint_url or "",
-        "model_id": model.model_id,
-        "api_key_env": "API_KEY" if model.provider in ("openai", "custom") else "",
-        "extra": model.config or {},
-    }
-    if model.provider == "ragline_self_hosted" and isinstance(model.config, dict):
-        hid = model.config.get("host_model_instance_id")
-        if hid:
-            model_config["host_model_instance_id"] = hid
-
-    embedding_model = "all-MiniLM-L6-v2"
-    embedding_query_prefix = None
-    vector_size = 384
-    points_data: list[dict] = []
-    has_kb = False
-    if dep.knowledge_base_id:
-        kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == dep.knowledge_base_id).first()
-        if kb and kb.qdrant_collection_name:
-            has_kb = True
-            emb = resolve_embedding_for_kb(kb.config)
-            embedding_model = emb.get("embedding_model") or embedding_model
-            embedding_query_prefix = emb.get("embedding_query_prefix")
-            from app.services.embedding_registry import get_vector_size
-            vector_size = get_vector_size(embedding_model)
-            points_data = _get_points_from_collection(kb.qdrant_collection_name)
-
-    export_config = {
-        "config_version": 1,
-        "frozen_at": datetime.now(timezone.utc).isoformat(),
-        "deployment_name": dep.name,
-        "model": model_config,
-        "prompt": prompt_text,
-        "retriever": {
-            "top_k": top_k,
-            "embedding_model": embedding_model,
-            "embedding_query_prefix": embedding_query_prefix or "",
-        },
-        "has_kb": has_kb,
-        "vector_size": vector_size,
-    }
+    frozen_cfg, points_data = _build_frozen_config(db, deployment_id, False, 10)
+    export_config = {k: v for k, v in frozen_cfg.items() if k not in ("memory_enabled", "memory_turns")}
+    if export_config.get("model") and isinstance(export_config["model"], dict):
+        export_config["model"] = {k: v for k, v in export_config["model"].items() if k != "_api_key"}
+    snap = export_config.get("intent_snapshot")
+    if snap and isinstance(snap.get("routing_model"), dict):
+        rm = {k: v for k, v in snap["routing_model"].items() if k != "_api_key"}
+        snap = dict(snap)
+        snap["routing_model"] = rm
+        export_config["intent_snapshot"] = snap
+    _prepare_export_intent_snapshot(export_config)
 
     api_port, qdrant_port = _export_ports(deployment_id)
     server_main_py = _SERVER_MAIN_PY
     server_requirements = _SERVER_REQUIREMENTS
+    if export_config.get("retrieval_mode") == "intent":
+        server_requirements = _SERVER_REQUIREMENTS + "\nhttpx>=0.26.0\npsycopg2-binary>=2.9.9\npymysql>=1.1.0\n"
     docker_compose = _DOCKER_COMPOSE.format(api_port=api_port, qdrant_port=qdrant_port)
     root_readme = _ROOT_README.format(api_port=api_port, qdrant_port=qdrant_port)
 
@@ -160,9 +140,19 @@ def build_export_bundle_from_version(db: Session, deployment_id: str, version_id
             points_data = _get_points_from_collection(collection_name)
         except Exception:
             points_data = []
+    snap = export_config.get("intent_snapshot")
+    if snap and isinstance(snap.get("routing_model"), dict):
+        rm = {k: v for k, v in snap["routing_model"].items() if k != "_api_key"}
+        snap = dict(snap)
+        snap["routing_model"] = rm
+        export_config["intent_snapshot"] = snap
+    _prepare_export_intent_snapshot(export_config)
+
     api_port, qdrant_port = _export_ports(version_id)
     server_main_py = _SERVER_MAIN_PY
     server_requirements = _SERVER_REQUIREMENTS
+    if export_config.get("retrieval_mode") == "intent":
+        server_requirements = _SERVER_REQUIREMENTS + "\nhttpx>=0.26.0\npsycopg2-binary>=2.9.9\npymysql>=1.1.0\n"
     docker_compose = _DOCKER_COMPOSE.format(api_port=api_port, qdrant_port=qdrant_port)
     root_readme = _ROOT_README.format(api_port=api_port, qdrant_port=qdrant_port)
     buf = io.BytesIO()
@@ -328,7 +318,7 @@ from fastapi.responses import JSONResponse
 from openai import OpenAI
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
+from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
 from sentence_transformers import SentenceTransformer
 
 # Load config from parent directory (export bundle root)
@@ -348,6 +338,7 @@ EMBEDDING_MODEL = RETRIEVER.get("embedding_model", "all-MiniLM-L6-v2")
 QUERY_PREFIX = (RETRIEVER.get("embedding_query_prefix") or "").strip()
 VECTOR_SIZE = CONFIG.get("vector_size", 384)
 HAS_KB = CONFIG.get("has_kb", False)
+RETRIEVAL_MODE = CONFIG.get("retrieval_mode") or "kb"
 
 # Qdrant client (set at startup after seeding)
 _qdrant: QdrantClient | None = None
@@ -373,7 +364,217 @@ def get_qdrant() -> QdrantClient:
         _qdrant = QdrantClient(url=url)
     return _qdrant
 
+def _parse_router_json(text: str):
+    if not text:
+        return None
+    t = text.strip()
+    if "```" in t:
+        parts = t.split("```")
+        if len(parts) >= 2:
+            t = parts[1].strip()
+            if t.lower().startswith("json"):
+                t = t[4:].strip()
+    if t.startswith("{"):
+        try:
+            return json.loads(t)
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def _intent_export_search(question: str) -> tuple[str, list[dict]]:
+    import httpx
+    import sqlite3
+
+    snap = CONFIG.get("intent_snapshot") or {}
+    docs = snap.get("documents") or []
+    rout = snap.get("routing_model") or {}
+    if not docs:
+        return "No relevant context found.", []
+    lines = []
+    by_id = {}
+    for e in docs:
+        did = e.get("document_id")
+        if not did:
+            continue
+        by_id[did] = e
+        ln = "- document_id=%s source_type=%s name=%r intent=%r" % (
+            did,
+            e.get("source_type"),
+            e.get("name"),
+            e.get("intent_text"),
+        )
+        if e.get("source_type") == "database" and e.get("allowed_tables"):
+            ln += " allowed_tables=%r" % (e.get("allowed_tables"),)
+        lines.append(ln)
+    catalog = "\\n".join(lines)
+    rp = (
+        "You route user questions to exactly one knowledge document. Respond with ONLY a JSON object.\\n"
+        'Required keys: "document_id" (uuid string), "reason" (short string).\\n'
+        'Optional: for api add "request_body"; for database add "table" and "limit".\\n\\n'
+        "Documents:\\n%s\\n\\nUser question:\\n%s"
+    ) % (catalog, question)
+    raw = ""
+    try:
+        prov = (rout.get("provider") or "").lower()
+        api_key = os.environ.get(rout.get("api_key_env") or "API_KEY")
+        base_url = (rout.get("endpoint_url") or "").strip().rstrip("/")
+        if base_url and not base_url.endswith("/v1"):
+            base_url = base_url + "/v1"
+        rid = rout.get("model_id") or "gpt-3.5-turbo"
+        rc = OpenAI(api_key=api_key or "not-needed", base_url=base_url or None)
+        rr = rc.chat.completions.create(
+            model=rid,
+            messages=[{"role": "user", "content": rp}],
+            extra_body={"enable_thinking": False, "chat_template_kwargs": {"enable_thinking": False}},
+        )
+        raw = (rr.choices[0].message.content or "") if rr.choices else ""
+    except Exception:
+        raw = ""
+    dec = _parse_router_json(raw) or {}
+    doc_id = dec.get("document_id")
+    if isinstance(doc_id, str):
+        doc_id = doc_id.strip()
+    if not doc_id or doc_id not in by_id:
+        doc_id = docs[0].get("document_id")
+    entry = by_id.get(doc_id) if doc_id else None
+    if not entry:
+        return "No relevant context found.", []
+
+    st = entry.get("source_type")
+    cfg = entry.get("config") if isinstance(entry.get("config"), dict) else {}
+
+    if st in ("file", "url", "documentation_zip"):
+        if not HAS_KB or _qdrant is None:
+            return "No relevant context found.", []
+        try:
+            qv = embed_query(question)
+            flt = Filter(must=[FieldCondition(key="document_id", match=MatchValue(value=doc_id))])
+            resp = get_qdrant().query_points(
+                collection_name=COLLECTION_NAME,
+                query=qv,
+                query_filter=flt,
+                limit=TOP_K,
+                with_payload=True,
+            )
+            hits = getattr(resp, "points", None) or []
+        except Exception:
+            return "No relevant context found.", []
+        parts = []
+        cites = []
+        for h in hits:
+            payload = h.payload or {}
+            text = payload.get("text", "")
+            if text:
+                parts.append(text)
+                cites.append(
+                    {
+                        "text": text,
+                        "source": payload.get("source", ""),
+                        "score": float(h.score),
+                        "document_id": doc_id,
+                        "source_type": st,
+                    }
+                )
+        ctx = "\\n\\n".join(parts) if parts else "No relevant context found."
+        return ctx, cites
+
+    if st == "api":
+        method = (cfg.get("method") or "GET").upper()
+        url = cfg.get("url") or ""
+        headers = cfg.get("headers") if isinstance(cfg.get("headers"), dict) else {}
+        execute = bool(cfg.get("execute_at_runtime", True))
+        cit = {"text": "", "source": entry.get("name") or "", "score": 1.0, "document_id": doc_id, "source_type": "api"}
+        if execute:
+            try:
+                body = dec.get("request_body")
+                bd = cfg.get("body")
+                if isinstance(bd, dict) and isinstance(body, dict):
+                    merged = json.dumps({**bd, **body})
+                elif isinstance(bd, str):
+                    merged = bd
+                else:
+                    merged = json.dumps(bd) if bd else None
+                with httpx.Client(timeout=30.0, follow_redirects=False) as cli:
+                    r = cli.request(method, url, headers=headers, content=merged if merged and method not in ("GET", "HEAD") else None)
+                txt = r.text[:400000]
+                cit["text"] = txt[:4000]
+                return ("HTTP %s\\n%s" % (r.status_code, txt)), [cit]
+            except Exception as ex:
+                return "API retrieval failed: %s" % ex, [cit]
+        static = "Method: %s\\nURL: %s\\nExample:\\n%s" % (method, url, cfg.get("example_response") or "")
+        cit["text"] = static[:4000]
+        return static, [cit]
+
+    if st == "database":
+        eng = (cfg.get("engine") or "postgresql").lower()
+        allowed = list(cfg.get("allowed_tables") or [])
+        table = dec.get("table") or (allowed[0] if allowed else "")
+        if table not in allowed:
+            return "Invalid or disallowed table for this document.", []
+        lim = min(int(dec.get("limit") or 50), 200)
+        pwd = cfg.get("password_plain_export") or ""
+        try:
+            if eng == "postgresql":
+                import psycopg2
+                conn = psycopg2.connect(
+                    host=cfg.get("host") or "localhost",
+                    port=int(cfg.get("port") or 5432),
+                    dbname=cfg.get("database") or "",
+                    user=cfg.get("user") or "",
+                    password=pwd,
+                    connect_timeout=10,
+                )
+                conn.set_session(readonly=True, autocommit=True)
+                cur = conn.cursor()
+                cur.execute('SELECT * FROM "' + table.replace('"', "") + '" LIMIT %s', (lim,))
+                rows = cur.fetchall()
+                cols = [d[0] for d in cur.description] if cur.description else []
+                cur.close()
+                conn.close()
+                out = ", ".join(str(c) for c in cols) + "\\n" + "\\n".join(str(x) for x in rows[:lim])
+            elif eng == "mysql":
+                import pymysql
+                conn = pymysql.connect(
+                    host=cfg.get("host") or "localhost",
+                    port=int(cfg.get("port") or 3306),
+                    database=cfg.get("database") or "",
+                    user=cfg.get("user") or "",
+                    password=pwd,
+                    connect_timeout=10,
+                    read_timeout=60,
+                )
+                cur = conn.cursor()
+                cur.execute("SELECT * FROM `" + table.replace("`", "") + "` LIMIT %s", (lim,))
+                rows = cur.fetchall()
+                cols = [d[0] for d in cur.description] if cur.description else []
+                cur.close()
+                conn.close()
+                out = ", ".join(str(c) for c in cols) + "\\n" + "\\n".join(str(x) for x in rows[:lim])
+            else:
+                conn = sqlite3.connect(cfg.get("sqlite_path") or "", timeout=10)
+                cur = conn.execute("SELECT * FROM \"%s\" LIMIT %d" % (table.replace('"', ""), lim))
+                rows = cur.fetchall()
+                cols = [d[0] for d in cur.description] if cur.description else []
+                conn.close()
+                out = ", ".join(str(c) for c in cols) + "\\n" + "\\n".join(str(x) for x in rows[:lim])
+            cit = {
+                "text": out[:4000],
+                "source": entry.get("name") or "",
+                "score": 1.0,
+                "document_id": doc_id,
+                "source_type": "database",
+            }
+            return out, [cit]
+        except Exception as ex:
+            return "Database retrieval failed: %s" % ex, []
+
+    return "No relevant context found.", []
+
+
 def search(query: str) -> tuple[str, list[dict]]:
+    if RETRIEVAL_MODE == "intent":
+        return _intent_export_search(query)
     if not HAS_KB or _qdrant is None:
         return "No relevant context found.", []
     try:

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db.base import get_db
 from app.models.user import User
 from app.models.deployment import Deployment
+from app.models.intent_mapper import IntentMapper
 from app.models.deployment_version import DeploymentVersion
 from app.models.prompt_template import PromptTemplate
 from app.schemas.deployment import DeploymentCreate, DeploymentUpdate, DeploymentResponse
@@ -45,6 +46,7 @@ def _deployment_to_response(
         name=d.name,
         model_id=d.model_id,
         knowledge_base_id=d.knowledge_base_id,
+        intent_mapper_id=d.intent_mapper_id,
         prompt_template_id=d.prompt_template_id,
         is_hosted=d.is_hosted,
         live_version=d.live_version,
@@ -122,13 +124,32 @@ def list_deployments(db: Session = Depends(get_db), _: User = Depends(require_ad
     return [_deployment_to_response(d) for d in deployments]
 
 
+def _resolve_kb_im_pair(kb: str | None, im: str | None) -> tuple[str | None, str | None]:
+    if kb and im:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Specify only one of knowledge_base_id or intent_mapper_id",
+        )
+    if kb:
+        return kb, None
+    if im:
+        return None, im
+    return kb, im
+
+
 @router.post("", response_model=DeploymentResponse)
 def create_deployment(body: DeploymentCreate, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    kb_id, im_id = _resolve_kb_im_pair(body.knowledge_base_id, body.intent_mapper_id)
+    if im_id:
+        im_row = db.query(IntentMapper).filter(IntentMapper.id == im_id).first()
+        if not im_row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Intent mapper not found")
     d = Deployment(
         id=str(uuid.uuid4()),
         name=body.name,
         model_id=body.model_id,
-        knowledge_base_id=body.knowledge_base_id,
+        knowledge_base_id=kb_id,
+        intent_mapper_id=im_id,
         prompt_template_id=body.prompt_template_id,
         is_hosted=False,
         live_version=None,
@@ -159,7 +180,17 @@ def update_deployment(
     if body.model_id is not None:
         d.model_id = body.model_id
     if body.knowledge_base_id is not None:
-        d.knowledge_base_id = body.knowledge_base_id
+        d.knowledge_base_id = body.knowledge_base_id or None
+        if body.knowledge_base_id:
+            d.intent_mapper_id = None
+    if body.intent_mapper_id is not None:
+        im_val = body.intent_mapper_id or None
+        if im_val:
+            im_row = db.query(IntentMapper).filter(IntentMapper.id == im_val).first()
+            if not im_row:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Intent mapper not found")
+            d.knowledge_base_id = None
+        d.intent_mapper_id = im_val
     if body.prompt_template_id is not None:
         d.prompt_template_id = body.prompt_template_id
     if body.is_hosted is not None:

@@ -8,12 +8,42 @@ from qdrant_client.models import Distance, VectorParams, PointStruct
 
 from app.models.deployment import Deployment
 from app.models.deployment_version import DeploymentVersion
+from app.models.document import Document
+from app.models.intent_mapper import IntentMapper, IntentMapperDocument
 from app.models.knowledge_base import KnowledgeBase
 from app.models.model_registry import ModelRegistry
 from app.models.prompt_template import PromptTemplate
 from app.schemas.rag_config import resolve_embedding_for_kb
-from app.services.export_deployment import _get_points_from_collection
 from app.services.qdrant_client import get_qdrant
+
+
+def _get_points_from_collection(collection_name: str) -> list[dict]:
+    """Scroll entire collection and return list of {id, vector, payload} for export/hosted snapshot."""
+    client = get_qdrant()
+    points_out = []
+    offset = None
+    limit = 100
+    while True:
+        points, next_offset = client.scroll(
+            collection_name=collection_name,
+            offset=offset,
+            limit=limit,
+            with_payload=True,
+            with_vectors=True,
+        )
+        for p in points:
+            vec = p.vector
+            if isinstance(vec, dict):
+                vec = vec.get("") or list(vec.values())[0] if vec else []
+            points_out.append({
+                "id": str(p.id) if hasattr(p.id, "__str__") else p.id,
+                "vector": vec,
+                "payload": p.payload or {},
+            })
+        if next_offset is None:
+            break
+        offset = next_offset
+    return points_out
 from app.services.rag import DEFAULT_RAG_PROMPT
 
 
@@ -61,7 +91,68 @@ def _build_frozen_config(
     vector_size = 384
     points_data: list[dict] = []
     has_kb = False
-    if dep.knowledge_base_id:
+    retrieval_mode = "kb"
+    intent_snapshot = None
+    config_version = 1
+
+    if dep.intent_mapper_id:
+        retrieval_mode = "intent"
+        config_version = 2
+        im = db.query(IntentMapper).filter(IntentMapper.id == dep.intent_mapper_id).first()
+        kb_vec = None
+        if im:
+            kb_vec = db.query(KnowledgeBase).filter(KnowledgeBase.id == im.knowledge_base_id).first()
+            rm = db.query(ModelRegistry).filter(ModelRegistry.id == im.routing_model_id).first()
+            if rm:
+                r_cfg = {
+                    "provider": rm.provider,
+                    "endpoint_url": rm.endpoint_url or "",
+                    "model_id": rm.model_id,
+                    "api_key_env": "API_KEY" if rm.provider in ("openai", "custom") else "",
+                    "extra": rm.config or {},
+                }
+                if rm.provider == "ragline_self_hosted" and isinstance(rm.config, dict):
+                    hid = rm.config.get("host_model_instance_id")
+                    if hid:
+                        r_cfg["host_model_instance_id"] = hid
+                if rm.api_key_encrypted:
+                    r_cfg["_api_key"] = rm.api_key_encrypted
+                doc_rows = (
+                    db.query(Document, IntentMapperDocument.intent_text)
+                    .join(IntentMapperDocument, IntentMapperDocument.document_id == Document.id)
+                    .filter(IntentMapperDocument.intent_mapper_id == im.id)
+                    .all()
+                )
+                snapshot_docs = []
+                for doc, intent_text in doc_rows:
+                    cfg_d = dict(doc.config) if isinstance(doc.config, dict) else {}
+                    snapshot_docs.append(
+                        {
+                            "document_id": doc.id,
+                            "source_type": doc.source_type,
+                            "name": doc.name,
+                            "intent_text": intent_text or "",
+                            "config": cfg_d,
+                            "allowed_tables": cfg_d.get("allowed_tables") if doc.source_type == "database" else None,
+                        }
+                    )
+                intent_snapshot = {
+                    "routing_model": r_cfg,
+                    "documents": snapshot_docs,
+                    "knowledge_base_id": im.knowledge_base_id,
+                }
+        if kb_vec and kb_vec.qdrant_collection_name:
+            has_kb = True
+            emb = resolve_embedding_for_kb(kb_vec.config)
+            embedding_model = emb.get("embedding_model") or embedding_model
+            embedding_query_prefix = emb.get("embedding_query_prefix")
+            retriever_mode = (kb_vec.config or {}).get("retriever_mode") or "hybrid"
+            from app.services.embedding_registry import get_vector_size as _get_vs
+
+            vector_size = _get_vs(embedding_model)
+            points_data = _get_points_from_collection(kb_vec.qdrant_collection_name)
+
+    elif dep.knowledge_base_id:
         kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == dep.knowledge_base_id).first()
         if kb and kb.qdrant_collection_name:
             has_kb = True
@@ -70,11 +161,12 @@ def _build_frozen_config(
             embedding_query_prefix = emb.get("embedding_query_prefix")
             retriever_mode = (kb.config or {}).get("retriever_mode") or "hybrid"
             from app.services.embedding_registry import get_vector_size as _get_vs
+
             vector_size = _get_vs(embedding_model)
             points_data = _get_points_from_collection(kb.qdrant_collection_name)
 
     frozen_config = {
-        "config_version": 1,
+        "config_version": config_version,
         "frozen_at": datetime.now(timezone.utc).isoformat(),
         "deployment_name": dep.name,
         "model": model_config,
@@ -89,6 +181,8 @@ def _build_frozen_config(
         "vector_size": vector_size,
         "memory_enabled": memory_enabled,
         "memory_turns": memory_turns,
+        "retrieval_mode": retrieval_mode,
+        "intent_snapshot": intent_snapshot,
     }
     return frozen_config, points_data
 

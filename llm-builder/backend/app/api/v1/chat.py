@@ -11,6 +11,7 @@ from app.models.user import User
 from app.models.chat import ChatSession, ChatMessage
 from app.models.deployment import Deployment
 from app.models.knowledge_base import KnowledgeBase
+from app.models.intent_mapper import IntentMapper
 from app.models.deployment_version import DeploymentVersion
 from app.core.deps import get_current_user
 from app.schemas.rag_config import resolve_embedding_for_kb
@@ -36,9 +37,16 @@ def _warm_deployment_embedding_model(deployment_id: str) -> None:
     db = SessionLocal()
     try:
         dep = db.query(Deployment).filter(Deployment.id == deployment_id).first()
-        if not dep or not dep.knowledge_base_id:
+        if not dep:
             return
-        kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == dep.knowledge_base_id).first()
+        kb_id = dep.knowledge_base_id
+        if not kb_id and dep.intent_mapper_id:
+            im = db.query(IntentMapper).filter(IntentMapper.id == dep.intent_mapper_id).first()
+            if im:
+                kb_id = im.knowledge_base_id
+        if not kb_id:
+            return
+        kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
         if not kb:
             return
         emb = resolve_embedding_for_kb(kb.config)
@@ -73,7 +81,7 @@ def create_session(
     db.add(session)
     db.commit()
     db.refresh(session)
-    if dep.knowledge_base_id:
+    if dep.knowledge_base_id or dep.intent_mapper_id:
         t = threading.Thread(target=_warm_deployment_embedding_model, args=(deployment_id,), daemon=True)
         t.start()
     return {"id": session.id, "deployment_id": deployment_id, "title": session.title}

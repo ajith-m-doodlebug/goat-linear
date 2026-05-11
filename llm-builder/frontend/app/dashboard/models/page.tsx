@@ -311,12 +311,12 @@ export default function ModelsPage() {
         </form>
       </Modal>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="flex flex-col h-[28rem]">
+      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+        <Card className="flex flex-col">
           <CardHeader>
             <h2 className="font-semibold text-slate-800">Registered models</h2>
           </CardHeader>
-          <CardBody className="flex-1 min-h-0 overflow-y-auto">
+          <CardBody>
             {models.length === 0 ? (
               <EmptyState
                 title="No models yet"

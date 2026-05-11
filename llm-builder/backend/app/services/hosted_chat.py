@@ -42,11 +42,19 @@ def run_hosted_rag(
     retriever_mode = retriever.get("mode") or "hybrid"
     has_kb = cfg.get("has_kb", False)
     collection_name = f"hosted_{version.id}"
+    retrieval_mode = cfg.get("retrieval_mode") or "kb"
 
     context = "No relevant context found."
     citations: list[dict] = []
 
-    if has_kb:
+    if retrieval_mode == "intent":
+        try:
+            from app.services.intent_routing import build_intent_context_frozen
+
+            context, citations = build_intent_context_frozen(cfg, question, collection_name)
+        except Exception:
+            context, citations = "No relevant context found.", []
+    elif has_kb:
         try:
             client = get_qdrant()
             collections = client.get_collections().collections

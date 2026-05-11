@@ -6,16 +6,50 @@ import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Card, CardBody } from "@/app/components/ui/Card";
 
 const steps = [
-  { num: 1, title: "Knowledge", line: "Upload docs → chunk & embed for RAG", href: "/dashboard/knowledge" },
-  { num: 2, title: "Models", line: "Register Ollama, vLLM, or OpenAI-style endpoints", href: "/dashboard/models" },
-  { num: 3, title: "Deployments", line: "Model + optional KB + prompt = chat target", href: "/dashboard/deployments" },
-  { num: 4, title: "Chat", line: "Pick a deployment, chat with RAG when KB linked", href: "/dashboard/chat" },
+  {
+    num: 1,
+    title: "Knowledge",
+    line: "Files, URLs, API, or database sources → chunk & embed for RAG",
+    href: "/dashboard/knowledge",
+  },
+  {
+    num: 2,
+    title: "Models",
+    line: "Register Ollama, vLLM, RAGLine self-hosted, OpenAI, or Anthropic",
+    href: "/dashboard/models",
+  },
+  {
+    num: 3,
+    title: "Intent Mapper",
+    line: "Optional: route each question to one document via a routing model",
+    href: "/dashboard/intent-mapper",
+  },
+  {
+    num: 4,
+    title: "Deployments",
+    line: "Model + prompt + knowledge base or intent mapper (not both); hosted API & export",
+    href: "/dashboard/deployments",
+  },
+  { num: 5, title: "Chat", line: "Choose a deployment; citations when retrieval is enabled", href: "/dashboard/chat" },
 ];
 
 const features: { label: string; line: string; href: string }[] = [
-  { label: "Knowledge", line: "Docs, chunking, embeddings", href: "/dashboard/knowledge" },
-  { label: "Models", line: "Test & health checks", href: "/dashboard/models" },
-  { label: "Deployments", line: "Hosted API, versions, export", href: "/dashboard/deployments" },
+  {
+    label: "Knowledge",
+    line: "Upload content, HTTP APIs, and DB docs; per-document Test for retrieval, HTTP, or SQL connectivity",
+    href: "/dashboard/knowledge",
+  },
+  {
+    label: "Intent Mapper",
+    line: "Per-document intents; test shows which source wins and how to search, call APIs, or query tables",
+    href: "/dashboard/intent-mapper",
+  },
+  { label: "Models", line: "Test prompts against a registered endpoint", href: "/dashboard/models" },
+  {
+    label: "Deployments",
+    line: "Classic RAG (one KB) or intent-routed retrieval; versions, hosted URL, zip export",
+    href: "/dashboard/deployments",
+  },
   { label: "Chat", line: "Sessions, citations, memory", href: "/dashboard/chat" },
   { label: "Prompts", line: "Templates with {context}, {question}", href: "/dashboard/prompts" },
   { label: "Chunking & embedding", line: "RAG config presets", href: "/dashboard/rag-configs" },
@@ -30,7 +64,7 @@ export default function HelpPage() {
   useTopBar("Help & features", null);
   return (
     <div className="space-y-8">
-      <PageHeader description="Quick reference: get started and where to find each feature." />
+      <PageHeader description="Quick reference: build knowledge, register models, optionally add intent routing, then wire a deployment. A deployment uses either a single knowledge base (classic RAG) or an intent mapper (routed retrieval)—not both." />
 
       <section>
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Get started</h2>

@@ -52,12 +52,19 @@ def _rerank_with_keyword_boost(candidates: list, question: str, top_k: int) -> l
     return [r for _, r in scored[:top_k]]
 
 
+def _document_filter(document_id: str | None) -> Filter | None:
+    if not document_id:
+        return None
+    return Filter(must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))])
+
+
 def _scroll_all_keyword_matches(
     client,
     collection_name: str,
     keywords: set[str],
     seen_texts: set,
     min_keywords: int = 1,
+    document_id: str | None = None,
 ) -> list:
     """Scroll collection; return points whose text contains at least min_keywords of the question keywords."""
     if not keywords:
@@ -67,14 +74,18 @@ def _scroll_all_keyword_matches(
     scroll_limit = 100
     max_points = 2_000  # cap to avoid slow full scans; increase if KB is huge and you need more recall
     total = 0
+    doc_f = _document_filter(document_id)
     while total < max_points:
-        points, next_offset = client.scroll(
+        scroll_kw = dict(
             collection_name=collection_name,
             offset=offset,
             limit=scroll_limit,
             with_payload=True,
             with_vectors=False,
         )
+        if doc_f is not None:
+            scroll_kw["scroll_filter"] = doc_f
+        points, next_offset = client.scroll(**scroll_kw)
         if not points:
             break
         for point in points:
@@ -92,6 +103,77 @@ def _scroll_all_keyword_matches(
     return out
 
 
+def hybrid_retrieval_for_document(
+    client,
+    collection_name: str,
+    question: str,
+    document_id: str,
+    top_k: int,
+    embedding_model: str | None,
+    embedding_query_prefix: str | None,
+    retriever_mode: str,
+) -> tuple[list[str], list[dict]]:
+    """Hybrid (or vector-only) retrieval restricted to a single document_id."""
+    keywords = question_keywords(question) if retriever_mode == "hybrid" else set()
+    keyword_top_k = min(KEYWORD_TOP_K_MAX, top_k * 2)
+    fetch = min(top_k * 5, 150)
+    keyword_scored = []
+    vector_results = []
+    try:
+        if retriever_mode == "vector_only":
+            vector_results = _vector_retrieval(
+                client,
+                collection_name,
+                question,
+                top_k,
+                fetch,
+                embedding_model=embedding_model,
+                embedding_query_prefix=embedding_query_prefix,
+                document_id=document_id,
+            )
+        else:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                fut_kw = executor.submit(
+                    _keyword_retrieval,
+                    client,
+                    collection_name,
+                    keywords,
+                    keyword_top_k,
+                    document_id,
+                )
+                fut_vec = executor.submit(
+                    _vector_retrieval,
+                    client,
+                    collection_name,
+                    question,
+                    top_k,
+                    fetch,
+                    embedding_model=embedding_model,
+                    embedding_query_prefix=embedding_query_prefix,
+                    document_id=document_id,
+                )
+                keyword_scored = fut_kw.result()
+                vector_results = fut_vec.result()
+    except Exception:
+        pass
+
+    if not keyword_scored and not vector_results:
+        return [], []
+    context_parts, citations, payloads = _merge_and_take_top_k(
+        keyword_scored,
+        vector_results,
+        keywords,
+        top_k,
+    )
+    context_parts = _expand_context_with_same_file(
+        client,
+        collection_name,
+        context_parts,
+        payloads,
+    )
+    return context_parts, citations
+
+
 def _cap_and_rank_keyword_matches(keyword_scored: list, cap: int) -> list:
     """Sort by number of keyword matches (desc), return at most cap (n_matched, point) pairs."""
     if not keyword_scored:
@@ -100,11 +182,16 @@ def _cap_and_rank_keyword_matches(keyword_scored: list, cap: int) -> list:
     return keyword_scored[:cap]
 
 
-def _keyword_retrieval(client, collection_name: str, keywords: set, keyword_top_k: int) -> list:
+def _keyword_retrieval(client, collection_name: str, keywords: set, keyword_top_k: int, document_id: str | None = None) -> list:
     """Run keyword scroll + cap/rank. Used in parallel with vector retrieval."""
     seen_texts = set()
     keyword_scored = _scroll_all_keyword_matches(
-        client, collection_name, keywords, seen_texts, min_keywords=MIN_KEYWORDS_REQUIRED
+        client,
+        collection_name,
+        keywords,
+        seen_texts,
+        min_keywords=MIN_KEYWORDS_REQUIRED,
+        document_id=document_id,
     )
     return _cap_and_rank_keyword_matches(keyword_scored, keyword_top_k)
 
@@ -117,15 +204,20 @@ def _vector_retrieval(
     fetch: int,
     embedding_model: str | None = None,
     embedding_query_prefix: str | None = None,
+    document_id: str | None = None,
 ) -> list:
     """Run embedding + vector search + keyword re-rank. Used in parallel with keyword retrieval."""
     vector = encode_query_with_model(question, model_id=embedding_model, query_prefix=embedding_query_prefix)
-    resp = client.query_points(
+    q_kw: dict = dict(
         collection_name=collection_name,
         query=vector,
         limit=fetch,
         with_payload=True,
     )
+    df = _document_filter(document_id)
+    if df is not None:
+        q_kw["query_filter"] = df
+    resp = client.query_points(**q_kw)
     raw = getattr(resp, "points", None) or []
     return _rerank_with_keyword_boost(raw, question, top_k)
 
@@ -169,6 +261,8 @@ def _merge_and_take_top_k(
     citations = []
     for text, (_, score, source, payload) in ordered:
         c = {"text": text, "source": source, "score": score}
+        if payload.get("document_id") is not None:
+            c["document_id"] = payload["document_id"]
         if payload.get("source_path") is not None:
             c["source_path"] = payload["source_path"]
         if payload.get("breadcrumb") is not None:
@@ -274,8 +368,14 @@ def run_rag(
 
         context_parts = []
         citations = []
+        context = "No relevant context found."
 
-        if dep.knowledge_base_id:
+        if dep.intent_mapper_id:
+            from app.services.intent_routing import build_intent_context_live
+
+            context, citations = build_intent_context_live(db, dep, question)
+
+        elif dep.knowledge_base_id:
             kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == dep.knowledge_base_id).first()
             if kb:
                 top_k = 10
@@ -341,7 +441,7 @@ def run_rag(
                 else:
                     citations = []
 
-        context = "\n\n".join(context_parts) if context_parts else "No relevant context found."
+            context = "\n\n".join(context_parts) if context_parts else "No relevant context found."
         prompt_template = None
         if dep.prompt_template_id:
             prompt_template = db.query(PromptTemplate).filter(PromptTemplate.id == dep.prompt_template_id).first()

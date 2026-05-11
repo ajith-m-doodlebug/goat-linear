@@ -30,6 +30,7 @@ const navGroups = [
     items: [
       { href: "/dashboard", label: "Home", Icon: HomeIcon },
       { href: "/dashboard/knowledge", label: "Knowledge", Icon: BookIcon },
+      { href: "/dashboard/intent-mapper", label: "Intent Mapper", Icon: LayersIcon },
       { href: "/dashboard/models", label: "Models", Icon: CpuIcon },
       { href: "/dashboard/deployments", label: "Deployments", Icon: RocketIcon },
       { href: "/dashboard/chat", label: "Chat", Icon: ChatBubbleIcon },

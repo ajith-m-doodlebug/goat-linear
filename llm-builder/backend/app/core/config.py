@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     ragline_api_port: int = 8005
     cors_allow_origins: str = ""
 
+    # Intent routing / external retrieval safety
+    ragline_retrieval_http_timeout_seconds: float = 30.0
+    ragline_retrieval_http_max_bytes: int = 2_000_000
+    ragline_http_allow_hosts: str = ""  # comma-separated host suffixes; empty uses SSRF blocklist only
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

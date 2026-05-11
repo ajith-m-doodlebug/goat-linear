@@ -47,6 +47,7 @@ const pathnameToTitle: Record<string, string> = {
   "/dashboard": "Home",
   "/dashboard/help": "Help & features",
   "/dashboard/knowledge": "Knowledge",
+  "/dashboard/intent-mapper": "Intent Mapper",
   "/dashboard/models": "Models",
   "/dashboard/host-models": "Host Models",
   "/dashboard/deployments": "Deployments",

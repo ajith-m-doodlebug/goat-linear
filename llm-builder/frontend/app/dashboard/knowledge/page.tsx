@@ -47,6 +47,17 @@ type RagConfigFormValues = {
   embedding_query_prefix: string;
 };
 
+type DocumentTestResponse = {
+  ok: boolean;
+  mode: string;
+  message: string | null;
+  snippets: string[] | null;
+  citations: unknown[] | null;
+  api_ok: boolean | null;
+  api_response: string | null;
+  database_preview: string | null;
+};
+
 const DEFAULT_RAG_CONFIG: RagConfigFormValues = {
   chunk_strategy: "fixed",
   chunk_size: 512,
@@ -60,6 +71,10 @@ function statusVariant(s: string): "default" | "success" | "warning" | "error" {
   if (s === "failed") return "error";
   if (s === "processing" || s === "pending") return "warning";
   return "default";
+}
+
+function isRetrievalDocType(t: string) {
+  return t === "file" || t === "url" || t === "documentation_zip";
 }
 
 export default function KnowledgePage() {
@@ -88,6 +103,36 @@ export default function KnowledgePage() {
   const [editDocPresetId, setEditDocPresetId] = useState<string>("");
   const [dragOver, setDragOver] = useState(false);
   const [uploadType, setUploadType] = useState<"file" | "documentation">("file");
+  const [showApiModal, setShowApiModal] = useState(false);
+  const [showDbModal, setShowDbModal] = useState(false);
+  const [apiSaving, setApiSaving] = useState(false);
+  const [dbSaving, setDbSaving] = useState(false);
+  const [apiForm, setApiForm] = useState({
+    name: "",
+    method: "GET",
+    url: "",
+    headersJson: "",
+    body: "",
+    example_response: "",
+    execute_at_runtime: true,
+  });
+  const [dbForm, setDbForm] = useState({
+    name: "",
+    engine: "postgresql",
+    host: "",
+    port: "",
+    database: "",
+    user: "",
+    password: "",
+    sqlite_path: "",
+  });
+  const [testDoc, setTestDoc] = useState<Document | null>(null);
+  const [testQuery, setTestQuery] = useState("");
+  const [testApiBody, setTestApiBody] = useState("{}");
+  const [testDbTable, setTestDbTable] = useState("");
+  const [testDbLimit, setTestDbLimit] = useState("20");
+  const [testResult, setTestResult] = useState<DocumentTestResponse | null>(null);
+  const [testLoading, setTestLoading] = useState(false);
   const emptyStateFileInputRef = useRef<HTMLInputElement>(null);
   const headerFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -197,6 +242,88 @@ export default function KnowledgePage() {
     uploadType === "documentation"
       ? file.name.toLowerCase().endsWith(".zip")
       : ACCEPT_EXT.some((ext) => file.name.toLowerCase().endsWith(ext));
+
+  const submitApiDocument = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selected || !apiForm.name.trim() || !apiForm.url.trim()) return;
+    let headers: Record<string, string> | undefined;
+    if (apiForm.headersJson.trim()) {
+      try {
+        headers = JSON.parse(apiForm.headersJson) as Record<string, string>;
+      } catch {
+        alert("Headers must be valid JSON object");
+        return;
+      }
+    }
+    setApiSaving(true);
+    try {
+      await apiRequest(`/api/v1/knowledge-bases/${selected}/documents/api`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: apiForm.name.trim(),
+          method: apiForm.method,
+          url: apiForm.url.trim(),
+          headers,
+          body: apiForm.body || null,
+          example_response: apiForm.example_response || null,
+          execute_at_runtime: apiForm.execute_at_runtime,
+        }),
+      });
+      setShowApiModal(false);
+      setApiForm({
+        name: "",
+        method: "GET",
+        url: "",
+        headersJson: "",
+        body: "",
+        example_response: "",
+        execute_at_runtime: true,
+      });
+      await fetchDocuments();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setApiSaving(false);
+    }
+  };
+
+  const submitDbDocument = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selected || !dbForm.name.trim()) return;
+    setDbSaving(true);
+    try {
+      const portNum = dbForm.port.trim() ? parseInt(dbForm.port, 10) : undefined;
+      await apiRequest(`/api/v1/knowledge-bases/${selected}/documents/database`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: dbForm.name.trim(),
+          engine: dbForm.engine,
+          host: dbForm.host || null,
+          port: Number.isFinite(portNum as number) ? portNum : null,
+          database: dbForm.database || null,
+          user: dbForm.user || null,
+          password: dbForm.password || null,
+          sqlite_path: dbForm.sqlite_path || null,
+        }),
+      });
+      setShowDbModal(false);
+      setDbForm({
+        name: "",
+        engine: "postgresql",
+        host: "",
+        port: "",
+        database: "",
+        user: "",
+        password: "",
+        sqlite_path: "",
+      });
+      await fetchDocuments();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDbSaving(false);
+    }
+  };
 
   const uploadSingleFile = useCallback(
     async (
@@ -395,6 +522,60 @@ export default function KnowledgePage() {
     }
   };
 
+  const openDocumentTest = (d: Document) => {
+    setTestDoc(d);
+    setTestResult(null);
+    setTestQuery("");
+    setTestApiBody("{}");
+    const c = (d.config || {}) as { allowed_tables?: string[] };
+    const tables = Array.isArray(c.allowed_tables) ? c.allowed_tables : [];
+    setTestDbTable(tables[0] ?? "");
+    setTestDbLimit("20");
+  };
+
+  const runDocumentTest = async () => {
+    if (!selected || !testDoc) return;
+    setTestLoading(true);
+    setTestResult(null);
+    try {
+      const payload: Record<string, unknown> = {};
+      if (isRetrievalDocType(testDoc.source_type)) {
+        payload.question = testQuery.trim();
+      } else if (testDoc.source_type === "api") {
+        try {
+          const raw = testApiBody.trim();
+          payload.request_body = raw ? JSON.parse(raw) : undefined;
+        } catch {
+          alert("Request body must be valid JSON.");
+          setTestLoading(false);
+          return;
+        }
+      } else if (testDoc.source_type === "database") {
+        payload.table = testDbTable.trim() || undefined;
+        const lim = parseInt(testDbLimit, 10);
+        payload.limit = Number.isFinite(lim) ? lim : 20;
+      }
+      const res = await apiRequest<DocumentTestResponse>(
+        `/api/v1/knowledge-bases/${selected}/documents/${testDoc.id}/test`,
+        { method: "POST", body: JSON.stringify(payload) }
+      );
+      setTestResult(res);
+    } catch (e) {
+      setTestResult({
+        ok: false,
+        mode: "error",
+        message: e instanceof Error ? e.message : "Request failed",
+        snippets: null,
+        citations: null,
+        api_ok: null,
+        api_response: null,
+        database_preview: null,
+      });
+    } finally {
+      setTestLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
@@ -406,7 +587,229 @@ export default function KnowledgePage() {
 
   return (
     <div>
-      <PageHeader description="Create knowledge bases and upload documents for RAG. Files are chunked and embedded automatically." />
+      <PageHeader description="Upload files, add API definitions, or database connections. Files are chunked and embedded; API and DB sources are used by intent-mapped deployments. Use Test on a document to verify retrieval, HTTP, or database connectivity." />
+
+      <Modal open={showApiModal} onClose={() => setShowApiModal(false)} title="Add API document">
+        <form onSubmit={submitApiDocument} className="space-y-3">
+          <div>
+            <label className="label">Name</label>
+            <input className="input" value={apiForm.name} onChange={(e) => setApiForm((f) => ({ ...f, name: e.target.value }))} required />
+          </div>
+          <div>
+            <label className="label">Method</label>
+            <select className="input" value={apiForm.method} onChange={(e) => setApiForm((f) => ({ ...f, method: e.target.value }))}>
+              {["GET", "POST", "PUT", "PATCH", "DELETE"].map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">URL</label>
+            <input className="input font-mono text-sm" value={apiForm.url} onChange={(e) => setApiForm((f) => ({ ...f, url: e.target.value }))} required placeholder="https://api.example.com/v1/..." />
+          </div>
+          <div>
+            <label className="label">Headers (JSON object, optional)</label>
+            <textarea className="input font-mono text-xs min-h-[60px]" value={apiForm.headersJson} onChange={(e) => setApiForm((f) => ({ ...f, headersJson: e.target.value }))} placeholder='{"Authorization": "Bearer ..."}' />
+          </div>
+          <div>
+            <label className="label">Body template (optional)</label>
+            <textarea className="input font-mono text-xs min-h-[72px]" value={apiForm.body} onChange={(e) => setApiForm((f) => ({ ...f, body: e.target.value }))} />
+          </div>
+          <div>
+            <label className="label">Example response (optional)</label>
+            <textarea className="input font-mono text-xs min-h-[72px]" value={apiForm.example_response} onChange={(e) => setApiForm((f) => ({ ...f, example_response: e.target.value }))} />
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={apiForm.execute_at_runtime} onChange={(e) => setApiForm((f) => ({ ...f, execute_at_runtime: e.target.checked }))} />
+            Execute request at chat time (subject to network policy)
+          </label>
+          <div className="flex gap-2 pt-2">
+            <Button type="submit" variant="primary" disabled={apiSaving}>{apiSaving ? "Saving…" : "Save"}</Button>
+            <Button type="button" variant="secondary" onClick={() => setShowApiModal(false)}>Cancel</Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={showDbModal} onClose={() => setShowDbModal(false)} title="Add database document">
+        <form onSubmit={submitDbDocument} className="space-y-3">
+          <div>
+            <label className="label">Name</label>
+            <input className="input" value={dbForm.name} onChange={(e) => setDbForm((f) => ({ ...f, name: e.target.value }))} required />
+          </div>
+          <div>
+            <label className="label">Engine</label>
+            <select className="input" value={dbForm.engine} onChange={(e) => setDbForm((f) => ({ ...f, engine: e.target.value }))}>
+              <option value="postgresql">PostgreSQL</option>
+              <option value="mysql">MySQL</option>
+              <option value="sqlite">SQLite</option>
+            </select>
+          </div>
+          {dbForm.engine === "sqlite" ? (
+            <div>
+              <label className="label">SQLite file path</label>
+              <input className="input font-mono text-sm" value={dbForm.sqlite_path} onChange={(e) => setDbForm((f) => ({ ...f, sqlite_path: e.target.value }))} required />
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Host</label>
+                  <input className="input" value={dbForm.host} onChange={(e) => setDbForm((f) => ({ ...f, host: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="label">Port</label>
+                  <input className="input" value={dbForm.port} onChange={(e) => setDbForm((f) => ({ ...f, port: e.target.value }))} placeholder="5432 / 3306" />
+                </div>
+              </div>
+              <div>
+                <label className="label">Database name</label>
+                <input className="input" value={dbForm.database} onChange={(e) => setDbForm((f) => ({ ...f, database: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">User</label>
+                <input className="input" value={dbForm.user} onChange={(e) => setDbForm((f) => ({ ...f, user: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Password</label>
+                <input type="password" className="input" value={dbForm.password} onChange={(e) => setDbForm((f) => ({ ...f, password: e.target.value }))} />
+              </div>
+            </>
+          )}
+          <div className="flex gap-2 pt-2">
+            <Button type="submit" variant="primary" disabled={dbSaving}>{dbSaving ? "Saving…" : "Save"}</Button>
+            <Button type="button" variant="secondary" onClick={() => setShowDbModal(false)}>Cancel</Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={testDoc != null}
+        onClose={() => {
+          setTestDoc(null);
+          setTestResult(null);
+        }}
+        title={testDoc ? `Test: ${testDoc.name}` : "Test document"}
+      >
+        {testDoc && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Type: <span className="font-medium text-slate-800">{testDoc.source_type}</span>
+            </p>
+            {isRetrievalDocType(testDoc.source_type) && (
+              <div>
+                <label className="label">Test query or phrase</label>
+                <textarea
+                  className="input resize-y min-h-[88px] text-sm"
+                  value={testQuery}
+                  onChange={(e) => setTestQuery(e.target.value)}
+                  placeholder="Enter text to run hybrid retrieval against this document’s chunks…"
+                  rows={3}
+                />
+                <p className="mt-1 text-xs text-slate-500">Requires status “completed” after ingest.</p>
+              </div>
+            )}
+            {testDoc.source_type === "api" && (
+              <div>
+                <label className="label">JSON body (merged with the document body template)</label>
+                <textarea
+                  className="input font-mono text-xs min-h-[100px]"
+                  value={testApiBody}
+                  onChange={(e) => setTestApiBody(e.target.value)}
+                  placeholder="{}"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Sends a real HTTP request when “execute at runtime” is enabled; otherwise shows config only.
+                </p>
+              </div>
+            )}
+            {testDoc.source_type === "database" && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="label">Table</label>
+                  {(
+                    ((testDoc.config || {}) as { allowed_tables?: string[] }).allowed_tables || []
+                  ).length > 0 ? (
+                    <select
+                      className="input"
+                      value={testDbTable}
+                      onChange={(e) => setTestDbTable(e.target.value)}
+                    >
+                      <option value="">Default (first allowed)</option>
+                      {(
+                        ((testDoc.config || {}) as { allowed_tables?: string[] }).allowed_tables || []
+                      ).map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      className="input font-mono text-sm"
+                      value={testDbTable}
+                      onChange={(e) => setTestDbTable(e.target.value)}
+                      placeholder="Table name (must be in allowed_tables on the document)"
+                    />
+                  )}
+                </div>
+                <div>
+                  <label className="label">Row limit</label>
+                  <input
+                    className="input"
+                    type="number"
+                    min={1}
+                    max={200}
+                    value={testDbLimit}
+                    onChange={(e) => setTestDbLimit(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+            <Button type="button" variant="primary" onClick={runDocumentTest} disabled={testLoading}>
+              {testLoading ? "Running…" : "Run test"}
+            </Button>
+            {testResult && (
+              <div className="rounded-[var(--radius)] border border-[var(--border)] bg-slate-50 p-3 space-y-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <Badge variant={testResult.ok ? "success" : "error"}>{testResult.ok ? "OK" : "Failed"}</Badge>
+                  <span className="text-slate-600">{testResult.mode}</span>
+                </div>
+                {testResult.message && <p className="text-slate-800">{testResult.message}</p>}
+                {testResult.snippets && testResult.snippets.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Snippets</p>
+                    <ul className="space-y-2 list-decimal list-inside text-slate-700 text-xs">
+                      {testResult.snippets.map((s, i) => (
+                        <li key={i} className="whitespace-pre-wrap break-words">
+                          {s}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {testResult.api_response != null && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                      {testResult.mode === "api" ? "Response" : "Output"}
+                    </p>
+                    <pre className="p-2 rounded bg-white border border-[var(--border)] text-xs overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">
+                      {testResult.api_response}
+                    </pre>
+                  </div>
+                )}
+                {testResult.database_preview != null && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Query preview</p>
+                    <pre className="p-2 rounded bg-white border border-[var(--border)] text-xs overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">
+                      {testResult.database_preview}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={showCreate}
@@ -691,6 +1094,12 @@ export default function KnowledgePage() {
                   className="hidden"
                   onChange={handleHeaderFileChange}
                 />
+                <Button variant="secondary" type="button" onClick={() => setShowApiModal(true)}>
+                  Add API
+                </Button>
+                <Button variant="secondary" type="button" onClick={() => setShowDbModal(true)}>
+                  Add database
+                </Button>
                 <Button
                   variant="primary"
                   disabled={uploading}
@@ -758,6 +1167,7 @@ export default function KnowledgePage() {
                   <thead>
                     <tr className="bg-slate-50 border-b border-[var(--border)]">
                       <th className="text-left p-3 text-xs font-semibold text-slate-500 uppercase">Name</th>
+                      <th className="text-left p-3 text-xs font-semibold text-slate-500 uppercase">Type</th>
                       <th className="text-left p-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
                       <th className="text-left p-3 text-xs font-semibold text-slate-500 uppercase">Created</th>
                       <th className="text-left p-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
@@ -767,6 +1177,7 @@ export default function KnowledgePage() {
                     {documents.map((d) => (
                       <tr key={d.id} className="border-b border-[var(--border)] hover:bg-slate-50/50">
                         <td className="p-3 font-medium text-slate-800">{d.name}</td>
+                        <td className="p-3 text-sm text-slate-600">{d.source_type}</td>
                         <td className="p-3">
                           <Badge variant={statusVariant(d.status)}>{d.status}</Badge>
                           {d.error_message && (
@@ -777,7 +1188,16 @@ export default function KnowledgePage() {
                         </td>
                         <td className="p-3 text-sm text-slate-500">{new Date(d.created_at).toLocaleString()}</td>
                         <td className="p-3 flex gap-2 flex-wrap items-center">
-                          {d.source_type !== "documentation_zip" && (
+                          <Button
+                            variant="secondary"
+                            className="text-xs py-1 px-2"
+                            onClick={() => openDocumentTest(d)}
+                          >
+                            Test
+                          </Button>
+                          {d.source_type !== "documentation_zip" &&
+                            d.source_type !== "api" &&
+                            d.source_type !== "database" && (
                             <Button
                               variant="ghost"
                               className="text-xs py-1 px-1.5"

@@ -12,7 +12,10 @@ from app.models.user import User
 from app.models.knowledge_base import KnowledgeBase
 from app.models.document import Document, DocumentStatus
 from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseUpdate, KnowledgeBaseResponse
-from app.schemas.document import DocumentResponse, DocumentUpdate
+from app.schemas.document import DocumentResponse, DocumentUpdate, DocumentTestRequest, DocumentTestResponse
+from app.schemas.document_extensions import DocumentApiCreate, DocumentDatabaseCreate
+from app.services.document_crypto import encrypt_secret
+from app.services.document_db_validate import validate_database_document
 from app.core.deps import get_current_user, require_admin
 from app.core.config import get_settings
 from app.core.queue import get_queue
@@ -20,6 +23,7 @@ from app.workers.ingest import run_ingest
 from app.services.qdrant_client import get_qdrant
 from app.schemas.rag_config import resolve_embedding_for_kb
 from app.services.embedding_registry import encode_query as encode_query_with_model
+from app.services.document_test import run_document_connection_test
 from datetime import timezone
 
 router = APIRouter()
@@ -27,6 +31,7 @@ router = APIRouter()
 ALLOWED_EXTENSIONS = {".txt", ".pdf", ".docx", ".doc", ".html", ".htm"}
 ALLOWED_EXTENSIONS_DOCUMENTATION = {".zip"}
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+ALLOWED_HTTP_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
 
 
 def _safe_basename(filename: str) -> str:
@@ -62,10 +67,17 @@ def _kb_to_response(kb: KnowledgeBase) -> KnowledgeBaseResponse:
     )
 
 
-def _doc_to_response(doc: Document) -> DocumentResponse:
+def _public_doc_config(doc: Document) -> dict | None:
     config = getattr(doc, "config", None)
-    if config is not None and not isinstance(config, dict):
-        config = None
+    if config is None or not isinstance(config, dict):
+        return None
+    out = dict(config)
+    if doc.source_type == "database" and out.get("password_encrypted"):
+        out["password_encrypted"] = "***"
+    return out
+
+
+def _doc_to_response(doc: Document) -> DocumentResponse:
     return DocumentResponse(
         id=doc.id,
         knowledge_base_id=doc.knowledge_base_id,
@@ -73,7 +85,7 @@ def _doc_to_response(doc: Document) -> DocumentResponse:
         source_type=doc.source_type,
         status=doc.status,
         error_message=doc.error_message,
-        config=config,
+        config=_public_doc_config(doc),
         created_at=_format_utc(doc.created_at),
     )
 
@@ -181,6 +193,93 @@ def list_documents(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
     docs = db.query(Document).filter(Document.knowledge_base_id == kb_id).order_by(Document.created_at.desc()).all()
     return [_doc_to_response(d) for d in docs]
+
+
+@router.post("/{kb_id}/documents/api", response_model=DocumentResponse)
+def create_api_document(
+    kb_id: str,
+    body: DocumentApiCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    if not kb:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
+    method = (body.method or "GET").strip().upper()
+    if method not in ALLOWED_HTTP_METHODS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid HTTP method")
+    doc_id = str(uuid.uuid4())
+    cfg = {
+        "method": method,
+        "url": (body.url or "").strip(),
+        "headers": body.headers or {},
+        "body": body.body,
+        "example_response": body.example_response,
+        "execute_at_runtime": body.execute_at_runtime,
+    }
+    doc = Document(
+        id=doc_id,
+        knowledge_base_id=kb_id,
+        name=body.name.strip() or "API",
+        source_type="api",
+        storage_path=None,
+        status=DocumentStatus.COMPLETED,
+        config=cfg,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    return _doc_to_response(doc)
+
+
+@router.post("/{kb_id}/documents/database", response_model=DocumentResponse)
+def create_database_document(
+    kb_id: str,
+    body: DocumentDatabaseCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    if not kb:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
+    ok, err, tables = validate_database_document(
+        body.engine,
+        host=body.host,
+        port=body.port,
+        database=body.database,
+        user=body.user,
+        password=body.password,
+        sqlite_path=body.sqlite_path,
+    )
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Database validation failed: {err}")
+
+    pwd_enc = encrypt_secret(body.password or "") if body.password else ""
+    cfg = {
+        "engine": (body.engine or "").strip().lower(),
+        "host": body.host,
+        "port": body.port,
+        "database": body.database,
+        "user": body.user,
+        "password_encrypted": pwd_enc,
+        "sqlite_path": body.sqlite_path,
+        "default_schema": body.default_schema,
+        "allowed_tables": tables,
+    }
+    doc_id = str(uuid.uuid4())
+    doc = Document(
+        id=doc_id,
+        knowledge_base_id=kb_id,
+        name=body.name.strip() or "Database",
+        source_type="database",
+        storage_path=None,
+        status=DocumentStatus.COMPLETED,
+        config=cfg,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    return _doc_to_response(doc)
 
 
 @router.post("/{kb_id}/upload", response_model=DocumentResponse)
@@ -301,6 +400,34 @@ def search(
         return {"results": out}
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+
+
+@router.post("/{kb_id}/documents/{document_id}/test", response_model=DocumentTestResponse)
+def test_document(
+    kb_id: str,
+    document_id: str,
+    body: DocumentTestRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Verify connectivity: hybrid retrieval (file/url/zip), HTTP call (api), or SELECT preview (database)."""
+    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    if not kb:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
+    doc = db.query(Document).filter(Document.id == document_id, Document.knowledge_base_id == kb_id).first()
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    result = run_document_connection_test(
+        db,
+        kb,
+        doc,
+        question=body.question,
+        request_body=body.request_body,
+        table=body.table,
+        limit=body.limit,
+        top_k=body.top_k,
+    )
+    return DocumentTestResponse(**result)
 
 
 @router.patch("/{kb_id}/documents/{document_id}", response_model=DocumentResponse)
