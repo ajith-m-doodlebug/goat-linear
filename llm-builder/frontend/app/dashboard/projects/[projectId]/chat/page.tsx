@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { apiRequest } from "@/lib/api";
+import { projectApi } from "@/lib/projectApi";
 import { useTopBar } from "@/app/dashboard/TopBarContext";
 import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Card } from "@/app/components/ui/Card";
@@ -34,6 +35,8 @@ function parseDataUrl(result: string): { media_type: string; data: string; previ
 }
 
 export default function ChatPage() {
+  const params = useParams();
+  const projectId = typeof params.projectId === "string" ? params.projectId : "";
   const searchParams = useSearchParams();
   const sessionIdFromUrl = searchParams.get("session");
 
@@ -71,8 +74,9 @@ export default function ChatPage() {
   );
 
   const loadDeployments = async () => {
+    if (!projectId) return;
     try {
-      const list = await apiRequest<Deployment[]>("/api/v1/deployments");
+      const list = await apiRequest<Deployment[]>(projectApi(projectId, "deployments"));
       setDeployments(list);
       if (list.length && !selectedDeploymentId) setSelectedDeploymentId(list[0].id);
     } catch (e) {
@@ -81,8 +85,9 @@ export default function ChatPage() {
   };
 
   const loadSessions = async () => {
+    if (!projectId) return;
     try {
-      const list = await apiRequest<Session[]>("/api/v1/chat/sessions");
+      const list = await apiRequest<Session[]>(projectApi(projectId, "chat/sessions"));
       setSessions(list);
     } catch (e) {
       console.error(e);
@@ -92,7 +97,7 @@ export default function ChatPage() {
   useEffect(() => {
     loadDeployments();
     loadSessions();
-  }, []);
+  }, [projectId]);
 
   // Open session from URL (e.g. from home "Recent chat sessions")
   useEffect(() => {
@@ -109,10 +114,10 @@ export default function ChatPage() {
       setMessages([]);
       return;
     }
-    apiRequest<Message[]>(`/api/v1/chat/sessions/${currentSession.id}/messages`)
+    apiRequest<Message[]>(projectApi(projectId, `chat/sessions/${currentSession.id}/messages`))
       .then(setMessages)
       .catch(() => setMessages([]));
-  }, [currentSession?.id]);
+  }, [currentSession?.id, projectId]);
 
   useEffect(() => {
     if (!menuSessionId) return;
@@ -128,7 +133,7 @@ export default function ChatPage() {
   const createSessionForDeployment = async (deploymentId: string) => {
     setLoading(true);
     try {
-      const s = await apiRequest<{ id: string; deployment_id: string; title: string }>("/api/v1/chat/sessions", {
+      const s = await apiRequest<{ id: string; deployment_id: string; title: string }>(projectApi(projectId, "chat/sessions"), {
         method: "POST",
         body: JSON.stringify({ deployment_id: deploymentId }),
       });
@@ -157,8 +162,8 @@ export default function ChatPage() {
     if (!renameSession || !renameTitle.trim()) return;
     try {
       const updated = await apiRequest<{ id: string; deployment_id: string; title: string }>(
-        `/api/v1/chat/sessions/${renameSession.id}`,
-        { method: "PATCH", body: JSON.stringify({ title: renameTitle.trim() }) }
+        projectApi(projectId, `chat/sessions/${renameSession.id}`),
+        { method: "PATCH", body: JSON.stringify({ title: renameTitle.trim() }) },
       );
       setSessions((prev) =>
         prev.map((s) => (s.id === renameSession.id ? { ...s, title: updated.title } : s))
@@ -175,7 +180,7 @@ export default function ChatPage() {
     if (!confirm("Delete this chat? Messages cannot be recovered.")) return;
     setMenuSessionId(null);
     try {
-      await apiRequest(`/api/v1/chat/sessions/${sessionId}`, { method: "DELETE" });
+      await apiRequest(projectApi(projectId, `chat/sessions/${sessionId}`), { method: "DELETE" });
       if (currentSession?.id === sessionId) setCurrentSession(null);
       await loadSessions();
     } catch (err) {
@@ -235,14 +240,14 @@ export default function ChatPage() {
     ]);
     try {
       const res = await apiRequest<{ response: string; citations: { text: string; source: string; score: number }[] }>(
-        `/api/v1/chat/sessions/${currentSession.id}/messages`,
+        projectApi(projectId, `chat/sessions/${currentSession.id}/messages`),
         {
           method: "POST",
           body: JSON.stringify({
             content,
             ...(imagesPayload.length ? { images: imagesPayload } : {}),
           }),
-        }
+        },
       );
       setMessages((prev: Message[]) => [
         ...prev,
@@ -261,7 +266,7 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <div className="shrink-0">
-        <PageHeader description="Pick a deployment and chat. Answers are grounded in your documents when a knowledge base is linked." />
+        <PageHeader description="Choose a deployment. Grounded answers when retrieval is on." />
       </div>
 
       <Modal open={showNewChat} onClose={() => setShowNewChat(false)} title="Start New Chat">

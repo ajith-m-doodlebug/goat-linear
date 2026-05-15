@@ -45,18 +45,33 @@ export function useTopBarState() {
 
 const pathnameToTitle: Record<string, string> = {
   "/dashboard": "Home",
-  "/dashboard/help": "Help & features",
-  "/dashboard/knowledge": "Knowledge",
-  "/dashboard/intent-mapper": "Intent Mapper",
-  "/dashboard/models": "Models",
+  "/dashboard/projects": "Projects",
   "/dashboard/host-models": "Host Models",
-  "/dashboard/deployments": "Deployments",
-  "/dashboard/chat": "Chat",
-  "/dashboard/prompts": "Prompts",
-  "/dashboard/rag-configs": "Chunking & Embedding",
   "/dashboard/users": "Users",
 };
 
+const projectSegmentTitle: Record<string, string> = {
+  "": "Home",
+  knowledge: "Knowledge",
+  "intent-mapper": "Intent Mapper",
+  models: "Models",
+  deployments: "Deployments",
+  chat: "Chat",
+  prompts: "Prompts",
+  "rag-configs": "Chunking & Embedding",
+  help: "Help & features",
+  users: "Users",
+  "host-models": "Host Models",
+};
+
 export function getTitleFromPathname(pathname: string): string {
-  return pathnameToTitle[pathname] ?? "Dashboard";
+  if (pathnameToTitle[pathname]) return pathnameToTitle[pathname]!;
+  if (pathname.includes("/deployments/new/canvas")) return "New deployment";
+  const m = pathname.match(/^\/dashboard\/projects\/([^/]+)(?:\/([\w-]+))?/);
+  if (m) {
+    const seg = m[2] ?? "";
+    if (pathname.includes("/canvas")) return "Deployment canvas";
+    return projectSegmentTitle[seg] ?? "Project";
+  }
+  return "Dashboard";
 }

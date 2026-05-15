@@ -8,7 +8,6 @@ import type { UserResponse } from "@/lib/api";
 import { TopBarProvider, useTopBarState, getTitleFromPathname } from "./TopBarContext";
 import { SettingsMenu } from "./SettingsMenu";
 import {
-  HelpCircleIcon,
   HomeIcon,
   BookIcon,
   CpuIcon,
@@ -24,32 +23,27 @@ import {
 
 const MOBILE_NAV_ID = "dashboard-mobile-nav";
 
-const navGroups = [
-  {
-    label: "Workflow",
-    items: [
-      { href: "/dashboard", label: "Home", Icon: HomeIcon },
-      { href: "/dashboard/knowledge", label: "Knowledge", Icon: BookIcon },
-      { href: "/dashboard/intent-mapper", label: "Intent Mapper", Icon: LayersIcon },
-      { href: "/dashboard/models", label: "Models", Icon: CpuIcon },
-      { href: "/dashboard/deployments", label: "Deployments", Icon: RocketIcon },
-      { href: "/dashboard/chat", label: "Chat", Icon: ChatBubbleIcon },
-    ],
-  },
-  {
-    label: "More",
-    items: [
-      { href: "/dashboard/prompts", label: "Prompts", Icon: DocumentTextIcon },
-      { href: "/dashboard/host-models", label: "Host Models", Icon: ComputerDesktopIcon },
-      { href: "/dashboard/rag-configs", label: "Chunking & Embedding", Icon: LayersIcon },
-    ],
-  },
-];
+export function projectBaseFromPath(pathname: string): string | null {
+  const m = pathname.match(/^\/dashboard\/projects\/([^/]+)/);
+  return m ? `/dashboard/projects/${m[1]}` : null;
+}
 
-const adminNavGroup = {
+function navItemActive(pathname: string, href: string, exact: boolean): boolean {
+  if (exact) return pathname === href;
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+const adminNavGroupSuper = {
   label: "Admin",
-  items: [{ href: "/dashboard/users", label: "Users", Icon: UsersIcon }],
+  items: [
+    { path: "users" as const, label: "Users", Icon: UsersIcon },
+    { path: "host-models" as const, label: "Host Models", Icon: ComputerDesktopIcon },
+  ],
 };
+
+function adminHref(projectBase: string | null, path: "users" | "host-models") {
+  return projectBase ? `${projectBase}/${path}` : `/dashboard/${path}`;
+}
 
 function navLinkClass(isActive: boolean) {
   return (
@@ -69,36 +63,86 @@ function DashboardNavLinks({
   user: UserResponse;
   onLinkClick?: () => void;
 }) {
+  const projectBase = projectBaseFromPath(pathname);
+
+  const workspaceLinks = projectBase
+    ? [
+        { href: projectBase, label: "Home", Icon: HomeIcon, exact: true },
+        { href: `${projectBase}/knowledge`, label: "Knowledge", Icon: BookIcon, exact: false },
+        { href: `${projectBase}/intent-mapper`, label: "Intent Mapper", Icon: LayersIcon, exact: false },
+        { href: `${projectBase}/models`, label: "Models", Icon: CpuIcon, exact: false },
+        { href: `${projectBase}/deployments`, label: "Deployments", Icon: RocketIcon, exact: false },
+        { href: `${projectBase}/chat`, label: "Chat", Icon: ChatBubbleIcon, exact: false },
+      ]
+    : [];
+
+  const moreLinks = projectBase
+    ? [
+        { href: `${projectBase}/prompts`, label: "Prompts", Icon: DocumentTextIcon, exact: false },
+        { href: `${projectBase}/rag-configs`, label: "Chunking & Embedding", Icon: LayersIcon, exact: false },
+      ]
+    : [];
+
   return (
     <nav className="flex-1 p-3 space-y-6 overflow-y-auto">
-      {navGroups.map((group) => (
-        <div key={group.label}>
-          <p className="px-3 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">{group.label}</p>
-          <ul className="space-y-0.5">
-            {group.items.map(({ href, label, Icon }) => {
-              const isActive = pathname === href;
-              return (
+      <div>
+        <p className="px-3 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Workspace</p>
+        <ul className="space-y-0.5">
+          <li key="/dashboard/projects">
+            <Link
+              href="/dashboard/projects"
+              onClick={onLinkClick}
+              className={navLinkClass(navItemActive(pathname, "/dashboard/projects", true))}
+            >
+              <LayersIcon className="w-5 h-5 flex-shrink-0" />
+              Projects
+            </Link>
+          </li>
+        </ul>
+      </div>
+
+      {projectBase && (
+        <>
+          <div>
+            <p className="px-3 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Workflow</p>
+            <ul className="space-y-0.5">
+              {workspaceLinks.map(({ href, label, Icon, exact }) => (
                 <li key={href}>
-                  <Link href={href} onClick={onLinkClick} className={navLinkClass(isActive)}>
+                  <Link href={href} onClick={onLinkClick} className={navLinkClass(navItemActive(pathname, href, exact))}>
                     {Icon && <Icon className="w-5 h-5 flex-shrink-0" />}
                     {label}
                   </Link>
                 </li>
-              );
-            })}
-          </ul>
-        </div>
-      ))}
+              ))}
+            </ul>
+          </div>
+          <div>
+            <p className="px-3 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">More</p>
+            <ul className="space-y-0.5">
+              {moreLinks.map(({ href, label, Icon, exact }) => (
+                <li key={href}>
+                  <Link href={href} onClick={onLinkClick} className={navLinkClass(navItemActive(pathname, href, exact))}>
+                    {Icon && <Icon className="w-5 h-5 flex-shrink-0" />}
+                    {label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </>
+      )}
+
       {user.role === "super_admin" && (
         <div>
           <p className="px-3 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-            {adminNavGroup.label}
+            {adminNavGroupSuper.label}
           </p>
           <ul className="space-y-0.5">
-            {adminNavGroup.items.map(({ href, label, Icon }) => {
-              const isActive = pathname === href;
+            {adminNavGroupSuper.items.map(({ path, label, Icon }) => {
+              const href = adminHref(projectBase, path);
+              const isActive = navItemActive(pathname, href, false);
               return (
-                <li key={href}>
+                <li key={path}>
                   <Link href={href} onClick={onLinkClick} className={navLinkClass(isActive)}>
                     {Icon && <Icon className="w-5 h-5 flex-shrink-0" />}
                     {label}
@@ -186,7 +230,7 @@ export default function DashboardLayout({
       <div className="min-h-screen min-h-[100dvh] flex bg-[var(--background)]">
         <aside className="hidden md:flex w-56 flex-shrink-0 border-r border-[var(--border)] bg-[var(--card)] flex flex-col">
           <div className="h-14 flex items-center px-4 border-b border-[var(--border)] shrink-0">
-            <Link href="/dashboard" className="font-semibold text-slate-800 text-lg tracking-tight">
+            <Link href="/dashboard/projects" className="font-semibold text-slate-800 text-lg tracking-tight">
               RAGLine
             </Link>
           </div>
@@ -214,7 +258,7 @@ export default function DashboardLayout({
         >
           <div className="h-14 flex items-center justify-between gap-2 px-4 border-b border-[var(--border)] shrink-0">
             <Link
-              href="/dashboard"
+              href="/dashboard/projects"
               className="font-semibold text-slate-800 text-lg tracking-tight min-w-0 truncate"
               onClick={closeMobileNav}
             >
@@ -284,18 +328,8 @@ function DashboardTopBar({
         <h1 className="text-lg md:text-xl font-semibold text-slate-800 truncate">{displayTitle}</h1>
       </div>
       <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-        {pathname === "/dashboard" && (
-          <Link
-            href="/dashboard/help"
-            className="p-2 rounded-[var(--radius)] text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-            title="Help & features"
-            aria-label="Help & features"
-          >
-            <HelpCircleIcon className="w-5 h-5" />
-          </Link>
-        )}
         {action != null && <div>{action}</div>}
-        {pathname === "/dashboard" && <SettingsMenu user={user} onLogout={onLogout} />}
+        <SettingsMenu user={user} onLogout={onLogout} />
       </div>
     </header>
   );

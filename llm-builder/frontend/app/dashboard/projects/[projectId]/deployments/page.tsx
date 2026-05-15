@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import { apiRequest, getApiBase } from "@/lib/api";
+import { projectApi } from "@/lib/projectApi";
 import { useTopBar } from "@/app/dashboard/TopBarContext";
 import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Card, CardBody, CardHeader } from "@/app/components/ui/Card";
@@ -37,34 +40,33 @@ type DeploymentVersion = {
 
 type Model = { id: string; name: string; model_id: string };
 type KnowledgeBase = { id: string; name: string };
-type IntentMapper = { id: string; name: string };
+type IntentMapper = { id: string; name: string; knowledge_base_id: string };
 type PromptTemplate = { id: string; name: string };
 
+async function fetchModelsForPicker(projectId: string): Promise<Model[]> {
+  if (!projectId) return [];
+  const raw = await apiRequest<Array<{ id: string; name: string; model_id: string }>>(projectApi(projectId, "models"));
+  return raw.map((m) => ({ id: m.id, name: m.name, model_id: m.model_id }));
+}
+
 export default function DeploymentsPage() {
+  const params = useParams();
+  const projectId = typeof params.projectId === "string" ? params.projectId : "";
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [models, setModels] = useState<Model[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [intentMappers, setIntentMappers] = useState<IntentMapper[]>([]);
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
   const [testId, setTestId] = useState<string | null>(null);
   const [question, setQuestion] = useState("");
   const [runResult, setRunResult] = useState<{ response: string; citations: { text: string; source: string; score: number }[] } | null>(null);
   const [runLoading, setRunLoading] = useState(false);
-  const [form, setForm] = useState({
-    name: "",
-    model_id: "",
-    retrieval: "none" as "none" | "kb" | "intent",
-    knowledge_base_id: "",
-    intent_mapper_id: "",
-    prompt_template_id: "",
-  });
   const [editDeploymentId, setEditDeploymentId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
     name: "",
     model_id: "",
-    retrieval: "none" as "none" | "kb" | "intent",
+    retrieval: "none" as "none" | "kb" | "kb_mapper",
     knowledge_base_id: "",
     intent_mapper_id: "",
     prompt_template_id: "",
@@ -88,9 +90,12 @@ export default function DeploymentsPage() {
     setExportingVersionId(versionId);
     try {
       const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
-      const res = await fetch(`${getApiBase()}/api/v1/deployments/${deploymentId}/versions/${versionId}/export`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch(
+        `${getApiBase()}${projectApi(projectId, `deployments/${deploymentId}/versions/${versionId}/export`)}`,
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        },
+      );
       if (!res.ok) throw new Error(await res.text());
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -110,7 +115,7 @@ export default function DeploymentsPage() {
     setExportingId(d.id);
     try {
       const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
-      const res = await fetch(`${getApiBase()}/api/v1/deployments/${d.id}/export`, {
+      const res = await fetch(`${getApiBase()}${projectApi(projectId, `deployments/${d.id}/export`)}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(await res.text());
@@ -128,28 +133,35 @@ export default function DeploymentsPage() {
     }
   };
 
+  const newCanvasHref =
+    projectId ? `/dashboard/projects/${projectId}/deployments/new/canvas` : "/dashboard/projects";
+  const newDeploymentBtnClass =
+    "inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[var(--radius)] font-medium text-sm transition-colors bg-brand-600 text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2";
+
   useTopBar(
     "Deployments",
-    <Button variant="primary" onClick={() => setShowForm(true)}>
-      New deployment
-    </Button>
+    projectId ? (
+      <Link href={newCanvasHref} className={newDeploymentBtnClass}>
+        New deployment
+      </Link>
+    ) : null,
   );
 
   const load = async () => {
+    if (!projectId) return;
     try {
       const [deps, mods, kbs, imappers, tmpls] = await Promise.all([
-        apiRequest<Deployment[]>("/api/v1/deployments"),
-        apiRequest<Model[]>("/api/v1/models"),
-        apiRequest<KnowledgeBase[]>("/api/v1/knowledge-bases"),
-        apiRequest<IntentMapper[]>("/api/v1/intent-mappers"),
-        apiRequest<PromptTemplate[]>("/api/v1/deployments/prompt-templates"),
+        apiRequest<Deployment[]>(projectApi(projectId, "deployments")),
+        fetchModelsForPicker(projectId),
+        apiRequest<KnowledgeBase[]>(projectApi(projectId, "knowledge-bases")),
+        apiRequest<IntentMapper[]>(projectApi(projectId, "intent-mappers")),
+        apiRequest<PromptTemplate[]>(projectApi(projectId, "deployments/prompt-templates")),
       ]);
       setDeployments(deps);
       setModels(mods);
       setKnowledgeBases(kbs);
       setIntentMappers(imappers);
       setTemplates(tmpls);
-      if (mods.length && !form.model_id) setForm((f) => ({ ...f, model_id: mods[0].id }));
     } catch (e) {
       console.error(e);
     } finally {
@@ -158,8 +170,8 @@ export default function DeploymentsPage() {
   };
 
   useEffect(() => {
-    load();
-  }, []);
+    void load();
+  }, [projectId]);
 
   useEffect(() => {
     if (deployments.length > 0 && versionsForId === null) {
@@ -167,36 +179,14 @@ export default function DeploymentsPage() {
     }
   }, [deployments, versionsForId]);
 
-  const createDeployment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.name.trim() || !form.model_id) return;
-    try {
-      await apiRequest("/api/v1/deployments", {
-        method: "POST",
-        body: JSON.stringify({
-          name: form.name,
-          model_id: form.model_id,
-          knowledge_base_id: form.retrieval === "kb" ? form.knowledge_base_id || null : null,
-          intent_mapper_id: form.retrieval === "intent" ? form.intent_mapper_id || null : null,
-          prompt_template_id: form.prompt_template_id || null,
-        }),
-      });
-      setForm((f) => ({ ...f, name: "" }));
-      setShowForm(false);
-      await load();
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   const run = async () => {
     if (!testId || !question.trim()) return;
     setRunLoading(true);
     setRunResult(null);
     try {
       const res = await apiRequest<{ response: string; citations: { text: string; source: string; score: number }[] }>(
-        `/api/v1/deployments/${testId}/run`,
-        { method: "POST", body: JSON.stringify({ question }) }
+        projectApi(projectId, `deployments/${testId}/run`),
+        { method: "POST", body: JSON.stringify({ question }) },
       );
       setRunResult(res);
     } catch (err) {
@@ -210,13 +200,18 @@ export default function DeploymentsPage() {
     e.preventDefault();
     if (!editDeploymentId || !editForm.name.trim() || !editForm.model_id) return;
     try {
-      await apiRequest(`/api/v1/deployments/${editDeploymentId}`, {
+      await apiRequest(projectApi(projectId, `deployments/${editDeploymentId}`), {
         method: "PATCH",
         body: JSON.stringify({
           name: editForm.name,
           model_id: editForm.model_id,
-          knowledge_base_id: editForm.retrieval === "kb" ? editForm.knowledge_base_id || null : null,
-          intent_mapper_id: editForm.retrieval === "intent" ? editForm.intent_mapper_id || null : null,
+          knowledge_base_id:
+            editForm.retrieval === "none"
+              ? null
+              : editForm.retrieval === "kb" || editForm.retrieval === "kb_mapper"
+                ? editForm.knowledge_base_id || null
+                : null,
+          intent_mapper_id: editForm.retrieval === "kb_mapper" ? editForm.intent_mapper_id || null : null,
           prompt_template_id: editForm.prompt_template_id || null,
         }),
       });
@@ -230,7 +225,7 @@ export default function DeploymentsPage() {
   const deleteDeployment = async (id: string) => {
     if (!confirm("Delete this deployment? Chat sessions using it may break.")) return;
     try {
-      await apiRequest(`/api/v1/deployments/${id}`, { method: "DELETE" });
+      await apiRequest(projectApi(projectId, `deployments/${id}`), { method: "DELETE" });
       if (testId === id) setTestId(null);
       await load();
     } catch (err) {
@@ -245,20 +240,20 @@ export default function DeploymentsPage() {
     setDeployResult(null);
     try {
       const res = await apiRequest<{ endpoint_url: string; version_label: string; version_id: string; status: string }>(
-        `/api/v1/deployments/${deployModalId}/deploy`,
+        projectApi(projectId, `deployments/${deployModalId}/deploy`),
         {
           method: "POST",
           body: JSON.stringify({
             memory_enabled: deployMemoryEnabled,
             memory_turns: deployMemoryTurns,
           }),
-        }
+        },
       );
       setDeployResult({ endpoint_url: res.endpoint_url, version_label: res.version_label, version_id: res.version_id });
       setDeployStarted(false);
       await load();
       setVersionsForId(deployModalId);
-      const vers = await apiRequest<DeploymentVersion[]>(`/api/v1/deployments/${deployModalId}/versions`);
+      const vers = await apiRequest<DeploymentVersion[]>(projectApi(projectId, `deployments/${deployModalId}/versions`));
       setVersions(vers);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -271,14 +266,17 @@ export default function DeploymentsPage() {
   const addNewVersion = async (deploymentId: string, makeLive: boolean) => {
     setCreatingVersion(true);
     try {
-      const res = await apiRequest<{ version_id: string; version_label: string }>(`/api/v1/deployments/${deploymentId}/versions`, { method: "POST" });
+      const res = await apiRequest<{ version_id: string; version_label: string }>(
+        projectApi(projectId, `deployments/${deploymentId}/versions`),
+        { method: "POST" },
+      );
       setConfirmNewVersionDeploymentId(null);
       if (makeLive) {
         await startVersion(deploymentId, res.version_id);
       } else {
         await load();
         if (versionsForId === deploymentId) {
-          const vers = await apiRequest<DeploymentVersion[]>(`/api/v1/deployments/${deploymentId}/versions`);
+          const vers = await apiRequest<DeploymentVersion[]>(projectApi(projectId, `deployments/${deploymentId}/versions`));
           setVersions(vers);
         }
       }
@@ -298,7 +296,7 @@ export default function DeploymentsPage() {
     setVersionsForId(deploymentId);
     setVersionsLoading(true);
     try {
-      const vers = await apiRequest<DeploymentVersion[]>(`/api/v1/deployments/${deploymentId}/versions`);
+      const vers = await apiRequest<DeploymentVersion[]>(projectApi(projectId, `deployments/${deploymentId}/versions`));
       setVersions(vers);
     } catch (err) {
       console.error(err);
@@ -311,7 +309,7 @@ export default function DeploymentsPage() {
   const deleteVersion = async (deploymentId: string, versionId: string) => {
     if (!confirm("Delete this version? Session history for this version will be removed.")) return;
     try {
-      await apiRequest(`/api/v1/deployments/${deploymentId}/versions/${versionId}`, { method: "DELETE" });
+      await apiRequest(projectApi(projectId, `deployments/${deploymentId}/versions/${versionId}`), { method: "DELETE" });
       if (versionsForId === deploymentId) await loadVersions(deploymentId);
       await load();
     } catch (err) {
@@ -322,7 +320,7 @@ export default function DeploymentsPage() {
   const startVersion = async (deploymentId: string, versionId: string) => {
     setVersionActionId(versionId);
     try {
-      await apiRequest(`/api/v1/deployments/${deploymentId}/versions/${versionId}/start`, { method: "POST" });
+      await apiRequest(projectApi(projectId, `deployments/${deploymentId}/versions/${versionId}/start`), { method: "POST" });
       if (versionsForId === deploymentId) await loadVersions(deploymentId);
       await load();
     } catch (err) {
@@ -335,7 +333,7 @@ export default function DeploymentsPage() {
   const stopVersion = async (deploymentId: string, versionId: string) => {
     setVersionActionId(versionId);
     try {
-      await apiRequest(`/api/v1/deployments/${deploymentId}/versions/${versionId}/stop`, { method: "POST" });
+      await apiRequest(projectApi(projectId, `deployments/${deploymentId}/versions/${versionId}/stop`), { method: "POST" });
       if (versionsForId === deploymentId) await loadVersions(deploymentId);
       await load();
     } catch (err) {
@@ -367,114 +365,7 @@ export default function DeploymentsPage() {
 
   return (
     <div className="w-full">
-      <PageHeader description="Pair a model with a knowledge base (classic RAG) or an intent mapper (routed retrieval). Not both. Deploy to get a stable API URL, or export as a zip." />
-
-      <Modal open={showForm} onClose={() => setShowForm(false)} title="New deployment">
-        <form onSubmit={createDeployment} className="space-y-4">
-          <div>
-            <label className="label">Name</label>
-            <input
-              type="text"
-              placeholder="e.g. Support bot"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              className="input"
-              required
-            />
-          </div>
-          <div>
-            <label className="label">Model</label>
-            <select
-              value={form.model_id}
-              onChange={(e) => setForm((f) => ({ ...f, model_id: e.target.value }))}
-              className="input"
-              required
-            >
-              <option value="">Select model</option>
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-2">
-            <span className="label">Retrieval</span>
-            <div className="flex flex-col gap-2">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="retrieval-new"
-                  checked={form.retrieval === "none"}
-                  onChange={() => setForm((f) => ({ ...f, retrieval: "none", knowledge_base_id: "", intent_mapper_id: "" }))}
-                />
-                None (model only)
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="retrieval-new"
-                  checked={form.retrieval === "kb"}
-                  onChange={() => setForm((f) => ({ ...f, retrieval: "kb", intent_mapper_id: "" }))}
-                />
-                Knowledge base
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="retrieval-new"
-                  checked={form.retrieval === "intent"}
-                  onChange={() => setForm((f) => ({ ...f, retrieval: "intent", knowledge_base_id: "" }))}
-                />
-                Intent mapper
-              </label>
-            </div>
-            {form.retrieval === "kb" && (
-              <select
-                value={form.knowledge_base_id}
-                onChange={(e) => setForm((f) => ({ ...f, knowledge_base_id: e.target.value }))}
-                className="input mt-2"
-              >
-                <option value="">Select knowledge base</option>
-                {knowledgeBases.map((kb) => (
-                  <option key={kb.id} value={kb.id}>{kb.name}</option>
-                ))}
-              </select>
-            )}
-            {form.retrieval === "intent" && (
-              <select
-                value={form.intent_mapper_id}
-                onChange={(e) => setForm((f) => ({ ...f, intent_mapper_id: e.target.value }))}
-                className="input mt-2"
-              >
-                <option value="">Select intent mapper</option>
-                {intentMappers.map((im) => (
-                  <option key={im.id} value={im.id}>{im.name}</option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div>
-            <label className="label">Prompt template (optional)</label>
-            <select
-              value={form.prompt_template_id}
-              onChange={(e) => setForm((f) => ({ ...f, prompt_template_id: e.target.value }))}
-              className="input"
-            >
-              <option value="">Default</option>
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex gap-2 pt-2">
-            <Button type="submit" variant="primary">
-              Create
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>
-              Cancel
-            </Button>
-          </div>
-        </form>
-      </Modal>
+      <PageHeader description="Model + prompt + optional retrieval: KB only, or KB then mapper. New deployments open in the visual builder." />
 
       <Modal
         open={deployModalId != null}
@@ -552,11 +443,16 @@ export default function DeploymentsPage() {
                       if (!deployModalId || !versionToStart) return;
                       setVersionActionId(versionToStart);
                       try {
-                        await apiRequest(`/api/v1/deployments/${deployModalId}/versions/${versionToStart}/start`, { method: "POST" });
+                        await apiRequest(
+                          projectApi(projectId, `deployments/${deployModalId}/versions/${versionToStart}/start`),
+                          { method: "POST" },
+                        );
                         setDeployStarted(true);
                         await load();
                         if (versionsForId === deployModalId) {
-                          const vers = await apiRequest<DeploymentVersion[]>(`/api/v1/deployments/${deployModalId}/versions`);
+                          const vers = await apiRequest<DeploymentVersion[]>(
+                            projectApi(projectId, `deployments/${deployModalId}/versions`),
+                          );
                           setVersions(vers);
                         }
                       } catch (err) {
@@ -646,13 +542,13 @@ export default function DeploymentsPage() {
                 <input
                   type="radio"
                   name="retrieval-edit"
-                  checked={editForm.retrieval === "intent"}
-                  onChange={() => setEditForm((f) => ({ ...f, retrieval: "intent", knowledge_base_id: "" }))}
+                  checked={editForm.retrieval === "kb_mapper"}
+                  onChange={() => setEditForm((f) => ({ ...f, retrieval: "kb_mapper" }))}
                 />
-                Intent mapper
+                Knowledge base + Mapper
               </label>
             </div>
-            {editForm.retrieval === "kb" && (
+            {(editForm.retrieval === "kb" || editForm.retrieval === "kb_mapper") && (
               <select
                 value={editForm.knowledge_base_id}
                 onChange={(e) => setEditForm((f) => ({ ...f, knowledge_base_id: e.target.value }))}
@@ -664,16 +560,19 @@ export default function DeploymentsPage() {
                 ))}
               </select>
             )}
-            {editForm.retrieval === "intent" && (
+            {editForm.retrieval === "kb_mapper" && (
               <select
                 value={editForm.intent_mapper_id}
                 onChange={(e) => setEditForm((f) => ({ ...f, intent_mapper_id: e.target.value }))}
                 className="input mt-2"
+                disabled={!editForm.knowledge_base_id}
               >
-                <option value="">Select intent mapper</option>
-                {intentMappers.map((im) => (
-                  <option key={im.id} value={im.id}>{im.name}</option>
-                ))}
+                <option value="">{editForm.knowledge_base_id ? "Select mapper" : "Pick a knowledge base first"}</option>
+                {intentMappers
+                  .filter((im) => im.knowledge_base_id === editForm.knowledge_base_id)
+                  .map((im) => (
+                    <option key={im.id} value={im.id}>{im.name}</option>
+                  ))}
               </select>
             )}
           </div>
@@ -734,11 +633,11 @@ export default function DeploymentsPage() {
               <div className="px-2 pb-8 pt-2">
                 <EmptyState
                   title="No deployments"
-                  description="Create a deployment to use in Chat. Link a knowledge base for RAG-powered answers."
+                  description="Open the canvas builder to define your pipeline, then save to create a deployment."
                   action={
-                    <Button variant="primary" onClick={() => setShowForm(true)}>
+                    <Link href={newCanvasHref} className={newDeploymentBtnClass}>
                       New deployment
-                    </Button>
+                    </Link>
                   }
                 />
               </div>
@@ -770,6 +669,13 @@ export default function DeploymentsPage() {
                         {d.name}
                       </span>
                       <div className="flex items-center gap-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <Link
+                          href={`/dashboard/projects/${projectId}/deployments/${d.id}/canvas`}
+                          className="text-xs py-1 px-1.5 rounded-[var(--radius)] text-brand-700 hover:bg-brand-50 font-medium"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Canvas
+                        </Link>
                         <Button
                           variant="ghost"
                           className="text-xs py-1 px-1.5"
@@ -779,8 +685,12 @@ export default function DeploymentsPage() {
                             setEditForm({
                               name: d.name,
                               model_id: d.model_id,
-                              retrieval: d.intent_mapper_id ? "intent" : d.knowledge_base_id ? "kb" : "none",
-                              knowledge_base_id: d.knowledge_base_id ?? "",
+                              retrieval: d.intent_mapper_id ? "kb_mapper" : d.knowledge_base_id ? "kb" : "none",
+                              knowledge_base_id:
+                                d.knowledge_base_id ??
+                                (d.intent_mapper_id
+                                  ? intentMappers.find((im) => im.id === d.intent_mapper_id)?.knowledge_base_id ?? ""
+                                  : ""),
                               intent_mapper_id: d.intent_mapper_id ?? "",
                               prompt_template_id: d.prompt_template_id ?? "",
                             });

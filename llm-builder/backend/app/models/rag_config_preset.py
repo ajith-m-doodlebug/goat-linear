@@ -9,6 +9,7 @@ class RagConfigPreset(Base):
     __tablename__ = "rag_config_presets"
 
     id = Column(String(36), primary_key=True, index=True)
+    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)

@@ -11,7 +11,6 @@ export default function SetupPage() {
   const [checking, setChecking] = useState(true);
   const [superAdminEmail, setSuperAdminEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [setupDefaultPrompt, setSetupDefaultPrompt] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -36,7 +35,6 @@ export default function SetupPage() {
       await setupApi.runSetup({
         super_admin_email: superAdminEmail,
         password,
-        setup_default_prompt: setupDefaultPrompt,
       });
       router.replace("/login");
       router.refresh();
@@ -62,7 +60,7 @@ export default function SetupPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <h1 className="text-xl font-bold text-slate-800">Initial setup</h1>
             <p className="text-sm text-slate-600">
-              Create the super admin account. You can add other users later from the Users page after you sign in.
+              Create the super admin account. After signing in, create a project from the dashboard when you are ready—nothing is seeded automatically.
             </p>
             {error && (
               <div className="p-3 rounded-[var(--radius)] bg-red-50 text-red-700 text-sm">{error}</div>
@@ -87,18 +85,6 @@ export default function SetupPage() {
                 required
                 className="input"
               />
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="setup-default-prompt"
-                checked={setupDefaultPrompt}
-                onChange={(e) => setSetupDefaultPrompt(e.target.checked)}
-                className="rounded border-slate-300"
-              />
-              <label htmlFor="setup-default-prompt" className="text-sm text-slate-700">
-                Create default &quot;Documentation&quot; prompt template
-              </label>
             </div>
             <Button type="submit" variant="primary" disabled={loading} className="w-full">
               {loading ? "Setting up…" : "Complete setup"}

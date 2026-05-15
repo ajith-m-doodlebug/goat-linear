@@ -180,6 +180,12 @@ ragline_host_models_image() {
   echo "${v:-vllm/vllm-openai:latest}"
 }
 
+ragline_host_models_llamacpp_image() {
+  local v
+  v="$(ragline_env_value_trimmed HOST_MODELS_LLAMACPP_IMAGE)"
+  echo "${v:-ghcr.io/ggml-org/llama.cpp:server-cuda}"
+}
+
 ragline_host_models_container_prefix() {
   local v
   v="$(ragline_env_value_trimmed RAGLINE_HOST_MODELS_CONTAINER_PREFIX)"
@@ -196,32 +202,23 @@ ragline_host_models_auto_start_enabled() {
 }
 
 ragline_host_models_pull_image_if_missing() {
-  local image
+  local image li_img
   image="$(ragline_host_models_image)"
-  echo "[ragline] Host Models image check: ${image}"
+  echo "[ragline] Host Models vLLM image check: ${image}"
   if docker image inspect "$image" >/dev/null 2>&1; then
-    echo "[ragline] Host Models image already present."
+    echo "[ragline] vLLM image already present."
   else
-    echo "[ragline] Pulling Host Models image..."
+    echo "[ragline] Pulling vLLM image..."
     docker pull "$image"
   fi
 
-  local pull_llamacpp li_img v
-  v="$(ragline_env_value_trimmed RAGLINE_HOST_MODELS_PULL_LLAMACPP)"
-  case "${v,,}" in
-    1|true|yes|on) pull_llamacpp=1 ;;
-    *) pull_llamacpp=0 ;;
-  esac
-  if [[ "$pull_llamacpp" -eq 1 ]]; then
-    li_img="$(ragline_env_value_trimmed HOST_MODELS_LLAMACPP_IMAGE)"
-    [[ -z "$li_img" ]] && li_img="ghcr.io/ggml-org/llama.cpp:server-cuda"
-    echo "[ragline] Host Models llama.cpp image check: ${li_img}"
-    if docker image inspect "$li_img" >/dev/null 2>&1; then
-      echo "[ragline] llama.cpp server image already present."
-    else
-      echo "[ragline] Pulling llama.cpp server image..."
-      docker pull "$li_img"
-    fi
+  li_img="$(ragline_host_models_llamacpp_image)"
+  echo "[ragline] Host Models llama.cpp image check: ${li_img}"
+  if docker image inspect "$li_img" >/dev/null 2>&1; then
+    echo "[ragline] llama.cpp server image already present."
+  else
+    echo "[ragline] Pulling llama.cpp server image..."
+    docker pull "$li_img"
   fi
 }
 

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useParams } from "next/navigation";
 import { apiRequest } from "@/lib/api";
+import { projectApi } from "@/lib/projectApi";
 import { useTopBar } from "@/app/dashboard/TopBarContext";
 import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Card, CardBody, CardHeader } from "@/app/components/ui/Card";
@@ -71,7 +73,15 @@ function isRagSourceType(t: string) {
   return t === "file" || t === "url" || t === "documentation_zip";
 }
 
+async function fetchModelsForPicker(projectId: string): Promise<Model[]> {
+  if (!projectId) return [];
+  const list = await apiRequest<Array<{ id: string; name: string }>>(projectApi(projectId, "models"));
+  return list.map((m) => ({ id: m.id, name: m.name }));
+}
+
 export default function IntentMapperPage() {
+  const params = useParams();
+  const projectId = typeof params.projectId === "string" ? params.projectId : "";
   const [mappers, setMappers] = useState<IntentMapperRow[]>([]);
   const [models, setModels] = useState<Model[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
@@ -108,8 +118,9 @@ export default function IntentMapperPage() {
   );
 
   const loadMappers = useCallback(async () => {
+    if (!projectId) return;
     try {
-      const list = await apiRequest<IntentMapperRow[]>("/api/v1/intent-mappers");
+      const list = await apiRequest<IntentMapperRow[]>(projectApi(projectId, "intent-mappers"));
       setMappers(list);
       setSelectedId((prev) => {
         if (prev && list.some((m) => m.id === prev)) return prev;
@@ -120,18 +131,19 @@ export default function IntentMapperPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     loadMappers();
   }, [loadMappers]);
 
   useEffect(() => {
+    if (!projectId) return;
     (async () => {
       try {
         const [mods, kbs] = await Promise.all([
-          apiRequest<Model[]>("/api/v1/models"),
-          apiRequest<KnowledgeBase[]>("/api/v1/knowledge-bases"),
+          fetchModelsForPicker(projectId),
+          apiRequest<KnowledgeBase[]>(projectApi(projectId, "knowledge-bases")),
         ]);
         setModels(mods);
         setKnowledgeBases(kbs);
@@ -143,11 +155,12 @@ export default function IntentMapperPage() {
         setKnowledgeBases([]);
       }
     })();
-  }, []);
+  }, [projectId]);
 
   const loadDetail = useCallback(async (id: string) => {
+    if (!projectId) return;
     try {
-      const d = await apiRequest<IntentMapperDetail>(`/api/v1/intent-mappers/${id}`);
+      const d = await apiRequest<IntentMapperDetail>(projectApi(projectId, `intent-mappers/${id}`));
       setDetail(d);
       const drafts: Record<string, string> = {};
       for (const x of d.documents) {
@@ -155,7 +168,9 @@ export default function IntentMapperPage() {
       }
       setIntentDrafts(drafts);
       if (d.knowledge_base_id) {
-        const docs = await apiRequest<KBDocument[]>(`/api/v1/knowledge-bases/${d.knowledge_base_id}/documents`);
+        const docs = await apiRequest<KBDocument[]>(
+          projectApi(projectId, `knowledge-bases/${d.knowledge_base_id}/documents`),
+        );
         setKbDocs(docs);
       } else {
         setKbDocs([]);
@@ -165,7 +180,7 @@ export default function IntentMapperPage() {
       setDetail(null);
       setKbDocs([]);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     if (selectedId) loadDetail(selectedId);
@@ -180,7 +195,7 @@ export default function IntentMapperPage() {
     if (!form.name.trim() || !form.routing_model_id || !form.knowledge_base_id) return;
     setCreating(true);
     try {
-      await apiRequest("/api/v1/intent-mappers", {
+      await apiRequest(projectApi(projectId, "intent-mappers"), {
         method: "POST",
         body: JSON.stringify({
           name: form.name.trim(),
@@ -207,7 +222,7 @@ export default function IntentMapperPage() {
         document_id: doc.id,
         intent_text: intentDrafts[doc.id] ?? "",
       }));
-      await apiRequest(`/api/v1/intent-mappers/${detail.id}`, {
+      await apiRequest(projectApi(projectId, `intent-mappers/${detail.id}`), {
         method: "PATCH",
         body: JSON.stringify({ documents }),
       });
@@ -225,7 +240,7 @@ export default function IntentMapperPage() {
     if (!editId || !editForm.name.trim() || !editForm.routing_model_id || !editForm.knowledge_base_id) return;
     setSavingEdit(true);
     try {
-      await apiRequest(`/api/v1/intent-mappers/${editId}`, {
+      await apiRequest(projectApi(projectId, `intent-mappers/${editId}`), {
         method: "PATCH",
         body: JSON.stringify({
           name: editForm.name.trim(),
@@ -247,7 +262,7 @@ export default function IntentMapperPage() {
   const deleteMapper = async (id: string) => {
     if (!confirm("Delete this intent mapper? Deployments that use it will need to be updated.")) return;
     try {
-      await apiRequest(`/api/v1/intent-mappers/${id}`, { method: "DELETE" });
+      await apiRequest(projectApi(projectId, `intent-mappers/${id}`), { method: "DELETE" });
       if (selectedId === id) setSelectedId(null);
       await loadMappers();
     } catch (e) {
@@ -260,10 +275,13 @@ export default function IntentMapperPage() {
     setTestLoading(true);
     setTestResult(null);
     try {
-      const r = await apiRequest<IntentMapperTestResponse>(`/api/v1/intent-mappers/${testMapperId}/test`, {
-        method: "POST",
-        body: JSON.stringify({ question: testQuestion.trim() }),
-      });
+      const r = await apiRequest<IntentMapperTestResponse>(
+        projectApi(projectId, `intent-mappers/${testMapperId}/test`),
+        {
+          method: "POST",
+          body: JSON.stringify({ question: testQuestion.trim() }),
+        },
+      );
       setTestResult(r);
     } catch (e) {
       setTestResult({
@@ -285,7 +303,7 @@ export default function IntentMapperPage() {
 
   return (
     <div className="w-full space-y-6">
-      <PageHeader description="The intent mapper tells a deployment which source to use and how to call it (search query, API body, or database table)—it does not replace the deployment’s model or prompt. Link a routing model to a knowledge base, describe when each document applies, then pick this mapper on a deployment instead of attaching the knowledge base directly." />
+      <PageHeader description="Route each question to a document (search, API, or DB). Use on a deployment instead of wiring the KB directly—KB XOR mapper, not both." />
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="New intent mapper">
         <form onSubmit={createMapper} className="space-y-4">

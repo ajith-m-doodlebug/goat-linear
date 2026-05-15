@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import { apiRequest } from "@/lib/api";
+import { projectApi } from "@/lib/projectApi";
 import { useTopBar } from "@/app/dashboard/TopBarContext";
 import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Card, CardBody, CardHeader } from "@/app/components/ui/Card";
@@ -9,8 +11,6 @@ import { Button } from "@/app/components/ui/Button";
 import { Modal } from "@/app/components/ui/Modal";
 import { EmptyState } from "@/app/components/ui/EmptyState";
 import { EditIcon, DeleteIcon } from "@/app/components/ui";
-
-const PROMPT_TEMPLATES_API = "/api/v1/deployments/prompt-templates";
 
 type PromptTemplate = {
   id: string;
@@ -36,6 +36,9 @@ Question: {question}
 Answer:`;
 
 export default function PromptsPage() {
+  const params = useParams();
+  const projectId = typeof params.projectId === "string" ? params.projectId : "";
+  const promptTemplatesApi = projectId ? projectApi(projectId, "deployments/prompt-templates") : "";
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -53,8 +56,9 @@ export default function PromptsPage() {
   );
 
   const loadTemplates = useCallback(async () => {
+    if (!promptTemplatesApi) return;
     try {
-      const list = await apiRequest<PromptTemplate[]>(PROMPT_TEMPLATES_API);
+      const list = await apiRequest<PromptTemplate[]>(promptTemplatesApi);
       setTemplates(list);
     } catch (e) {
       console.error(e);
@@ -62,7 +66,7 @@ export default function PromptsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [promptTemplatesApi]);
 
   useEffect(() => {
     loadTemplates();
@@ -91,7 +95,7 @@ export default function PromptsPage() {
     setSaving(true);
     try {
       if (editingId) {
-        await apiRequest<PromptTemplate>(`${PROMPT_TEMPLATES_API}/${editingId}`, {
+        await apiRequest<PromptTemplate>(`${promptTemplatesApi}/${editingId}`, {
           method: "PATCH",
           body: JSON.stringify({
             name: name.trim(),
@@ -100,7 +104,7 @@ export default function PromptsPage() {
           }),
         });
       } else {
-        await apiRequest<PromptTemplate>(PROMPT_TEMPLATES_API, {
+        await apiRequest<PromptTemplate>(promptTemplatesApi, {
           method: "POST",
           body: JSON.stringify({
             name: name.trim(),
@@ -121,7 +125,7 @@ export default function PromptsPage() {
   const deleteTemplate = async (id: string) => {
     if (!confirm("Delete this prompt template? Deployments using it will have no template.")) return;
     try {
-      await apiRequest(`${PROMPT_TEMPLATES_API}/${id}`, { method: "DELETE" });
+      await apiRequest(`${promptTemplatesApi}/${id}`, { method: "DELETE" });
       await loadTemplates();
     } catch (err) {
       console.error(err);
@@ -139,9 +143,7 @@ export default function PromptsPage() {
 
   return (
     <div>
-      <PageHeader
-        description="Create and manage prompt templates. Use placeholders {context}, {question}, and optionally {memory}. Assign a template to a deployment so chat uses your custom prompt."
-      />
+      <PageHeader description="Templates with placeholders like {context} and {question}. Attach them on deployments." />
 
       <Modal
         open={showModal}

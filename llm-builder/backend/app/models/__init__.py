@@ -11,6 +11,8 @@ from app.models.chat import ChatSession, ChatMessage
 from app.models.rag_config_preset import RagConfigPreset
 from app.models.host_model_instance import HostModelInstance
 from app.models.intent_mapper import IntentMapper, IntentMapperDocument
+from app.models.project import Project, ProjectMember, ProjectMemberAccess
+from app.models.project_model_link import ProjectModelLink
 
 __all__ = [
     "User", "Role", "SystemSettings", "KnowledgeBase", "Document", "DocumentStatus",
@@ -18,4 +20,6 @@ __all__ = [
     "DeploymentVersion", "HostedSessionMessage",
     "ChatSession", "ChatMessage", "RagConfigPreset", "HostModelInstance",
     "IntentMapper", "IntentMapperDocument",
+    "Project", "ProjectMember", "ProjectMemberAccess",
+    "ProjectModelLink",
 ]

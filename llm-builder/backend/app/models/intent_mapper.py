@@ -9,6 +9,7 @@ class IntentMapper(Base):
     __tablename__ = "intent_mappers"
 
     id = Column(String(36), primary_key=True, index=True)
+    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     routing_model_id = Column(String(36), ForeignKey("model_registry.id", ondelete="RESTRICT"), nullable=False)
     knowledge_base_id = Column(String(36), ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False)

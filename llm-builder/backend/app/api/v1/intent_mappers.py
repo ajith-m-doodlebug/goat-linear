@@ -19,7 +19,7 @@ from app.schemas.intent_mapper import (
     IntentMapperTestRequest,
     IntentMapperTestResponse,
 )
-from app.core.deps import require_admin
+from app.core.project_access import require_project_edit, require_project_view
 from app.services.intent_routing import preview_intent_mapper
 
 router = APIRouter()
@@ -48,8 +48,8 @@ def _to_response(m: IntentMapper) -> IntentMapperResponse:
     )
 
 
-def _detail(db: Session, mapper_id: str) -> IntentMapperDetailResponse:
-    m = db.query(IntentMapper).filter(IntentMapper.id == mapper_id).first()
+def _detail(db: Session, mapper_id: str, project_id: str) -> IntentMapperDetailResponse:
+    m = db.query(IntentMapper).filter(IntentMapper.id == mapper_id, IntentMapper.project_id == project_id).first()
     if not m:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Intent mapper not found")
     rows = db.query(IntentMapperDocument).filter(IntentMapperDocument.intent_mapper_id == mapper_id).all()
@@ -62,24 +62,30 @@ def _detail(db: Session, mapper_id: str) -> IntentMapperDetailResponse:
 
 
 @router.get("", response_model=list[IntentMapperResponse])
-def list_intent_mappers(db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    rows = db.query(IntentMapper).order_by(IntentMapper.created_at.desc()).all()
+def list_intent_mappers(
+    project_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_project_view),
+):
+    rows = db.query(IntentMapper).filter(IntentMapper.project_id == project_id).order_by(IntentMapper.created_at.desc()).all()
     return [_to_response(m) for m in rows]
 
 
 @router.post("", response_model=IntentMapperDetailResponse)
 def create_intent_mapper(
+    project_id: str,
     body: IntentMapperCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_project_edit),
 ):
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == body.knowledge_base_id).first()
-    if not kb:
+    if not kb or kb.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
 
     mid = str(uuid.uuid4())
     m = IntentMapper(
         id=mid,
+        project_id=project_id,
         name=body.name.strip(),
         routing_model_id=body.routing_model_id,
         knowledge_base_id=body.knowledge_base_id,
@@ -110,22 +116,28 @@ def create_intent_mapper(
 
     db.commit()
     db.refresh(m)
-    return _detail(db, mid)
+    return _detail(db, mid, project_id)
 
 
 @router.get("/{mapper_id}", response_model=IntentMapperDetailResponse)
-def get_intent_mapper(mapper_id: str, db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    return _detail(db, mapper_id)
+def get_intent_mapper(
+    project_id: str,
+    mapper_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_project_view),
+):
+    return _detail(db, mapper_id, project_id)
 
 
 @router.patch("/{mapper_id}", response_model=IntentMapperDetailResponse)
 def update_intent_mapper(
+    project_id: str,
     mapper_id: str,
     body: IntentMapperUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_project_edit),
 ):
-    m = db.query(IntentMapper).filter(IntentMapper.id == mapper_id).first()
+    m = db.query(IntentMapper).filter(IntentMapper.id == mapper_id, IntentMapper.project_id == project_id).first()
     if not m:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Intent mapper not found")
 
@@ -136,7 +148,7 @@ def update_intent_mapper(
     kb_id = m.knowledge_base_id
     if body.knowledge_base_id is not None:
         kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == body.knowledge_base_id).first()
-        if not kb:
+        if not kb or kb.project_id != project_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
         m.knowledge_base_id = body.knowledge_base_id
         kb_id = body.knowledge_base_id
@@ -167,16 +179,18 @@ def update_intent_mapper(
 
     db.commit()
     db.refresh(m)
-    return _detail(db, mapper_id)
+    return _detail(db, mapper_id, project_id)
 
 
 @router.post("/{mapper_id}/test", response_model=IntentMapperTestResponse)
 def test_intent_mapper(
+    project_id: str,
     mapper_id: str,
     body: IntentMapperTestRequest,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_project_view),
 ):
+    _detail(db, mapper_id, project_id)
     try:
         result = preview_intent_mapper(db, mapper_id, body.question)
         return IntentMapperTestResponse(**result)
@@ -185,8 +199,13 @@ def test_intent_mapper(
 
 
 @router.delete("/{mapper_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_intent_mapper(mapper_id: str, db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    m = db.query(IntentMapper).filter(IntentMapper.id == mapper_id).first()
+def delete_intent_mapper(
+    project_id: str,
+    mapper_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_project_edit),
+):
+    m = db.query(IntentMapper).filter(IntentMapper.id == mapper_id, IntentMapper.project_id == project_id).first()
     if not m:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Intent mapper not found")
     db.query(Deployment).filter(Deployment.intent_mapper_id == mapper_id).update(

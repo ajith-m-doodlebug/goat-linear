@@ -1,7 +1,6 @@
 import threading
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -14,6 +13,7 @@ from app.models.knowledge_base import KnowledgeBase
 from app.models.intent_mapper import IntentMapper
 from app.models.deployment_version import DeploymentVersion
 from app.core.deps import get_current_user
+from app.core.project_access import assert_project_view
 from app.schemas.rag_config import resolve_embedding_for_kb
 from app.services.rag import run_rag
 from app.services.chat_attachments import validate_images_from_body
@@ -59,19 +59,26 @@ def _warm_deployment_embedding_model(deployment_id: str) -> None:
         db.close()
 
 
+def _deployment_in_project(db: Session, deployment_id: str, project_id: str) -> Deployment:
+    dep = db.query(Deployment).filter(Deployment.id == deployment_id, Deployment.project_id == project_id).first()
+    if not dep:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deployment not found")
+    return dep
+
+
 @router.post("/sessions")
 def create_session(
+    project_id: str,
     body: dict,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """Body: { deployment_id: string, title?: string }. Returns session id."""
+    assert_project_view(db, user, project_id)
     deployment_id = body.get("deployment_id")
     if not deployment_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="deployment_id required")
-    dep = db.query(Deployment).filter(Deployment.id == deployment_id).first()
-    if not dep:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deployment not found")
+    dep = _deployment_in_project(db, deployment_id, project_id)
     session = ChatSession(
         id=str(uuid.uuid4()),
         deployment_id=deployment_id,
@@ -89,31 +96,43 @@ def create_session(
 
 @router.get("/sessions")
 def list_sessions(
+    project_id: str,
     deployment_id: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    assert_project_view(db, user, project_id)
     q = db.query(ChatSession).filter(ChatSession.user_id == user.id)
     if deployment_id:
+        _deployment_in_project(db, deployment_id, project_id)
         q = q.filter(ChatSession.deployment_id == deployment_id)
     sessions = q.order_by(ChatSession.updated_at.desc()).limit(50).all()
+    rows = []
+    for s in sessions:
+        dep = db.query(Deployment).filter(Deployment.id == s.deployment_id).first()
+        if dep and dep.project_id != project_id:
+            continue
+        rows.append(s)
     return [
         {"id": s.id, "deployment_id": s.deployment_id, "title": s.title, "updated_at": _utc_rfc3339(s.updated_at)}
-        for s in sessions
+        for s in rows
     ]
 
 
 @router.patch("/sessions/{session_id}")
 def update_session(
+    project_id: str,
     session_id: str,
     body: dict,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """Body: { title: string }. Rename the chat session."""
+    assert_project_view(db, user, project_id)
     session = db.query(ChatSession).filter(ChatSession.id == session_id, ChatSession.user_id == user.id).first()
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    _deployment_in_project(db, session.deployment_id, project_id)
     title = body.get("title")
     if title is not None:
         session.title = (title or "").strip() or session.title
@@ -124,14 +143,17 @@ def update_session(
 
 @router.delete("/sessions/{session_id}")
 def delete_session(
+    project_id: str,
     session_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """Delete a chat session and its messages."""
+    assert_project_view(db, user, project_id)
     session = db.query(ChatSession).filter(ChatSession.id == session_id, ChatSession.user_id == user.id).first()
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    _deployment_in_project(db, session.deployment_id, project_id)
     db.delete(session)
     db.commit()
     return {"ok": True}
@@ -139,13 +161,16 @@ def delete_session(
 
 @router.get("/sessions/{session_id}/messages")
 def get_messages(
+    project_id: str,
     session_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    assert_project_view(db, user, project_id)
     session = db.query(ChatSession).filter(ChatSession.id == session_id, ChatSession.user_id == user.id).first()
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    _deployment_in_project(db, session.deployment_id, project_id)
     messages = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at).all()
     return [
         {
@@ -162,15 +187,18 @@ def get_messages(
 
 @router.post("/sessions/{session_id}/messages")
 def send_message(
+    project_id: str,
     session_id: str,
     body: dict,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """Body: { content?: string, images?: [{ media_type, data }] }. Runs RAG, saves messages, returns response."""
+    assert_project_view(db, user, project_id)
     session = db.query(ChatSession).filter(ChatSession.id == session_id, ChatSession.user_id == user.id).first()
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    _deployment_in_project(db, session.deployment_id, project_id)
     content = (body.get("content") or "").strip()
     try:
         images = validate_images_from_body(body.get("images"))
@@ -216,6 +244,7 @@ def send_message(
 
 @router.get("/sessions/{session_id}/messages/stream")
 def stream_message_placeholder(
+    project_id: str,
     session_id: str,
 ):
     """Placeholder: streaming can be added here (SSE). Use POST /messages for now."""

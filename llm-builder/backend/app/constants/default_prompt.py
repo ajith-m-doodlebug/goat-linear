@@ -1,4 +1,4 @@
-"""Default Documentation prompt template content (used during setup)."""
+"""Sample documentation-style prompt text (e.g. paste into a project prompt template when you create one)."""
 
 DEFAULT_DOCUMENTATION_PROMPT = """You are a retrieval-grounded documentation assistant.
 

@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import { apiRequest } from "@/lib/api";
+import { projectApi } from "@/lib/projectApi";
 import { useTopBar } from "@/app/dashboard/TopBarContext";
 import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Card, CardBody, CardHeader } from "@/app/components/ui/Card";
@@ -27,6 +29,9 @@ const DEFAULT_CONFIG: RagConfigFormValues = {
 };
 
 export default function RagConfigsPage() {
+  const params = useParams();
+  const projectId = typeof params.projectId === "string" ? params.projectId : "";
+  const ragApiBase = projectId ? projectApi(projectId, "rag-configs") : "";
   const [presets, setPresets] = useState<RagConfigPreset[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -44,8 +49,9 @@ export default function RagConfigsPage() {
   );
 
   const loadPresets = useCallback(async () => {
+    if (!ragApiBase) return;
     try {
-      const list = await apiRequest<RagConfigPreset[]>("/api/v1/rag-configs");
+      const list = await apiRequest<RagConfigPreset[]>(ragApiBase);
       setPresets(list);
     } catch (e) {
       console.error(e);
@@ -53,7 +59,7 @@ export default function RagConfigsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [ragApiBase]);
 
   useEffect(() => {
     loadPresets();
@@ -95,12 +101,12 @@ export default function RagConfigsPage() {
         embedding_query_prefix: formConfig.embedding_query_prefix || null,
       };
       if (editingId) {
-        await apiRequest<RagConfigPreset>(`/api/v1/rag-configs/${editingId}`, {
+        await apiRequest<RagConfigPreset>(`${ragApiBase}/${editingId}`, {
           method: "PATCH",
           body: JSON.stringify({ name: name.trim(), description: description.trim() || null, config }),
         });
       } else {
-        await apiRequest<RagConfigPreset>("/api/v1/rag-configs", {
+        await apiRequest<RagConfigPreset>(ragApiBase, {
           method: "POST",
           body: JSON.stringify({ name: name.trim(), description: description.trim() || null, config }),
         });
@@ -117,7 +123,7 @@ export default function RagConfigsPage() {
   const deletePreset = async (id: string) => {
     if (!confirm("Delete this preset?")) return;
     try {
-      await apiRequest(`/api/v1/rag-configs/${id}`, { method: "DELETE" });
+      await apiRequest(`${ragApiBase}/${id}`, { method: "DELETE" });
       await loadPresets();
     } catch (err) {
       console.error(err);
@@ -135,9 +141,7 @@ export default function RagConfigsPage() {
 
   return (
     <div>
-      <PageHeader
-        description="Create and manage chunking and embedding presets. Apply them when creating a knowledge base or configuring a document for consistent RAG settings."
-      />
+      <PageHeader description="Presets for chunk size, overlap, and embeddings—apply when adding or configuring documents." />
 
       <Modal
         open={showModal}

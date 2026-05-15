@@ -1,5 +1,4 @@
 import uuid
-from typing import Annotated
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -9,7 +8,13 @@ from app.core.config import get_settings
 from app.db.base import get_db
 from app.models.user import User
 from app.models.model_registry import ModelRegistry
-from app.schemas.model_registry import ModelRegistryCreate, ModelRegistryUpdate, ModelRegistryResponse
+from app.models.host_model_instance import HostModelInstance
+from app.schemas.model_registry import (
+    ModelRegistryCreate,
+    ModelRegistryDeploymentOption,
+    ModelRegistryUpdate,
+    ModelRegistryResponse,
+)
 from app.core.deps import get_current_user, require_admin
 from app.services.llm_client import complete, health_check
 
@@ -75,6 +80,79 @@ def list_models(
         for m in models:
             db.refresh(m)
     return [_model_to_response(m) for m in models]
+
+
+def _host_status_for_model(db: Session, m: ModelRegistry) -> str | None:
+    if m.provider != "ragline_self_hosted":
+        return None
+    cfg = m.config if isinstance(m.config, dict) else {}
+    inst_id = cfg.get("host_model_instance_id")
+    if not inst_id:
+        return None
+    inst = db.query(HostModelInstance).filter(HostModelInstance.id == inst_id).first()
+    return str(inst.status) if inst else None
+
+
+def _model_allowed_for_deployment_picker(db: Session, m: ModelRegistry) -> bool:
+    if m.provider != "ragline_self_hosted":
+        return True
+    cfg = m.config if isinstance(m.config, dict) else {}
+    inst_id = cfg.get("host_model_instance_id")
+    if not inst_id:
+        return False
+    inst = db.query(HostModelInstance).filter(HostModelInstance.id == inst_id).first()
+    return bool(inst and inst.status == "healthy")
+
+
+def _to_deployment_option(m: ModelRegistry, db: Session) -> ModelRegistryDeploymentOption:
+    return ModelRegistryDeploymentOption(
+        id=m.id,
+        name=m.name,
+        model_type=m.model_type,
+        provider=m.provider,
+        endpoint_url=m.endpoint_url,
+        model_id=m.model_id,
+        version=m.version,
+        created_at=m.created_at.isoformat() if m.created_at else "",
+        host_instance_status=_host_status_for_model(db, m),
+    )
+
+
+@router.get("/available-for-deployment", response_model=list[ModelRegistryDeploymentOption])
+def list_models_available_for_deployment(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """All models safe for builders: excludes unhealthy ragline_self_hosted registry rows."""
+    _ = user  # any authenticated user with project access uses this from UI
+    models_list = db.query(ModelRegistry).order_by(ModelRegistry.name).all()
+    changed = False
+    for m in models_list:
+        changed = _sync_self_hosted_endpoint(m) or changed
+    if changed:
+        db.commit()
+        for m in models_list:
+            db.refresh(m)
+    out = [m for m in models_list if _model_allowed_for_deployment_picker(db, m)]
+    return [_to_deployment_option(m, db) for m in out]
+
+
+@router.get("/self-hosted-healthy-options", response_model=list[ModelRegistryDeploymentOption])
+def list_self_hosted_healthy_options(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Ragline self-hosted registry rows whose host instance is healthy (for linking into a project)."""
+    _ = user
+    models_list = db.query(ModelRegistry).filter(ModelRegistry.provider == "ragline_self_hosted").order_by(ModelRegistry.name).all()
+    changed = False
+    for m in models_list:
+        changed = _sync_self_hosted_endpoint(m) or changed
+    if changed:
+        db.commit()
+        models_list = db.query(ModelRegistry).filter(ModelRegistry.provider == "ragline_self_hosted").order_by(ModelRegistry.name).all()
+    out = [m for m in models_list if _model_allowed_for_deployment_picker(db, m)]
+    return [_to_deployment_option(m, db) for m in out]
 
 
 @router.post("", response_model=ModelRegistryResponse)

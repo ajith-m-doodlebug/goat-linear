@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, DateTime, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 
 from app.db.base import Base
@@ -9,6 +9,7 @@ class KnowledgeBase(Base):
     __tablename__ = "knowledge_bases"
 
     id = Column(String(36), primary_key=True, index=True)
+    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     qdrant_collection_name = Column(String(255), unique=True, nullable=False, index=True)

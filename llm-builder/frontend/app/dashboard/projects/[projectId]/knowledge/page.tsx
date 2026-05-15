@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useParams } from "next/navigation";
 import { apiRequest, getApiBase } from "@/lib/api";
+import { projectApi } from "@/lib/projectApi";
 import { useTopBar } from "@/app/dashboard/TopBarContext";
 import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Card, CardBody, CardHeader } from "@/app/components/ui/Card";
@@ -78,6 +80,8 @@ function isRetrievalDocType(t: string) {
 }
 
 export default function KnowledgePage() {
+  const params = useParams();
+  const projectId = typeof params.projectId === "string" ? params.projectId : "";
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -144,8 +148,9 @@ export default function KnowledgePage() {
   );
 
   const loadBases = async (): Promise<KnowledgeBase[]> => {
+    if (!projectId) return [];
     try {
-      const list = await apiRequest<KnowledgeBase[]>("/api/v1/knowledge-bases");
+      const list = await apiRequest<KnowledgeBase[]>(projectApi(projectId, "knowledge-bases"));
       setBases(list);
       if (list.length && !selected) setSelected(list[0].id);
       return list;
@@ -158,17 +163,19 @@ export default function KnowledgePage() {
   };
 
   useEffect(() => {
-    loadBases();
-  }, []);
+    if (!projectId) return;
+    void loadBases();
+  }, [projectId]);
 
   const loadPresets = useCallback(async () => {
+    if (!projectId) return;
     try {
-      const list = await apiRequest<RagPreset[]>("/api/v1/rag-configs");
+      const list = await apiRequest<RagPreset[]>(projectApi(projectId, "rag-configs"));
       setPresets(list);
     } catch {
       setPresets([]);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     loadPresets();
@@ -177,7 +184,7 @@ export default function KnowledgePage() {
   const fetchDocuments = useCallback(async () => {
     if (!selected) return;
     try {
-      const list = await apiRequest<Document[]>(`/api/v1/knowledge-bases/${selected}/documents`);
+      const list = await apiRequest<Document[]>(projectApi(projectId, `knowledge-bases/${selected}/documents`));
       setDocuments(list);
     } catch {
       setDocuments([]);
@@ -214,7 +221,7 @@ export default function KnowledgePage() {
         embedding_query_prefix: kbConfig.embedding_query_prefix || null,
         retriever_mode: kbRetrieverMode,
       };
-      await apiRequest<KnowledgeBase>("/api/v1/knowledge-bases", {
+      await apiRequest<KnowledgeBase>(projectApi(projectId, "knowledge-bases"), {
         method: "POST",
         body: JSON.stringify({
           name: name.trim(),
@@ -257,7 +264,7 @@ export default function KnowledgePage() {
     }
     setApiSaving(true);
     try {
-      await apiRequest(`/api/v1/knowledge-bases/${selected}/documents/api`, {
+      await apiRequest(projectApi(projectId, `knowledge-bases/${selected}/documents/api`), {
         method: "POST",
         body: JSON.stringify({
           name: apiForm.name.trim(),
@@ -293,7 +300,7 @@ export default function KnowledgePage() {
     setDbSaving(true);
     try {
       const portNum = dbForm.port.trim() ? parseInt(dbForm.port, 10) : undefined;
-      await apiRequest(`/api/v1/knowledge-bases/${selected}/documents/database`, {
+      await apiRequest(projectApi(projectId, `knowledge-bases/${selected}/documents/database`), {
         method: "POST",
         body: JSON.stringify({
           name: dbForm.name.trim(),
@@ -351,7 +358,7 @@ export default function KnowledgePage() {
         }
       }
       const token = localStorage.getItem("access_token");
-      const res = await fetch(`${getApiBase()}/api/v1/knowledge-bases/${selected}/upload`, {
+      const res = await fetch(`${getApiBase()}${projectApi(projectId, `knowledge-bases/${selected}/upload`)}`, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: form,
@@ -435,7 +442,7 @@ export default function KnowledgePage() {
     if (!selected) return;
     try {
       const doc = await apiRequest<Document>(
-        `/api/v1/knowledge-bases/${selected}/documents/${docId}/ingest`,
+        projectApi(projectId, `knowledge-bases/${selected}/documents/${docId}/ingest`),
         { method: "POST" }
       );
       setDocuments((d) => d.map((x) => (x.id === docId ? doc : x)));
@@ -456,7 +463,7 @@ export default function KnowledgePage() {
         embedding_query_prefix: editKbConfig.embedding_query_prefix || null,
         retriever_mode: editKbRetrieverMode,
       };
-      await apiRequest<KnowledgeBase>(`/api/v1/knowledge-bases/${editKbId}`, {
+      await apiRequest<KnowledgeBase>(projectApi(projectId, `knowledge-bases/${editKbId}`), {
         method: "PATCH",
         body: JSON.stringify({
           name: editKbName.trim(),
@@ -475,7 +482,7 @@ export default function KnowledgePage() {
   const deleteBase = async (kbId: string) => {
     if (!confirm("Delete this knowledge base and all its documents?")) return;
     try {
-      await apiRequest(`/api/v1/knowledge-bases/${kbId}`, { method: "DELETE" });
+      await apiRequest(projectApi(projectId, `knowledge-bases/${kbId}`), { method: "DELETE" });
       const list = await loadBases();
       if (selected === kbId) setSelected(list[0]?.id ?? null);
     } catch (err) {
@@ -495,7 +502,7 @@ export default function KnowledgePage() {
         embedding_query_prefix: editDocConfig.embedding_query_prefix || null,
       };
       const doc = await apiRequest<Document>(
-        `/api/v1/knowledge-bases/${selected}/documents/${editDocId}`,
+        projectApi(projectId, `knowledge-bases/${selected}/documents/${editDocId}`),
         {
           method: "PATCH",
           body: JSON.stringify({
@@ -515,7 +522,7 @@ export default function KnowledgePage() {
   const deleteDocument = async (docId: string) => {
     if (!selected || !confirm("Remove this document from the knowledge base?")) return;
     try {
-      await apiRequest(`/api/v1/knowledge-bases/${selected}/documents/${docId}`, { method: "DELETE" });
+      await apiRequest(projectApi(projectId, `knowledge-bases/${selected}/documents/${docId}`), { method: "DELETE" });
       setDocuments((d) => d.filter((x) => x.id !== docId));
     } catch (err) {
       console.error(err);
@@ -556,7 +563,7 @@ export default function KnowledgePage() {
         payload.limit = Number.isFinite(lim) ? lim : 20;
       }
       const res = await apiRequest<DocumentTestResponse>(
-        `/api/v1/knowledge-bases/${selected}/documents/${testDoc.id}/test`,
+        projectApi(projectId, `knowledge-bases/${selected}/documents/${testDoc.id}/test`),
         { method: "POST", body: JSON.stringify(payload) }
       );
       setTestResult(res);
@@ -587,7 +594,7 @@ export default function KnowledgePage() {
 
   return (
     <div>
-      <PageHeader description="Upload files, add API definitions, or database connections. Files are chunked and embedded; API and DB sources are used by intent-mapped deployments. Use Test on a document to verify retrieval, HTTP, or database connectivity." />
+      <PageHeader description="Add files, APIs, or DB sources. Embed files for RAG; test documents to verify each source." />
 
       <Modal open={showApiModal} onClose={() => setShowApiModal(false)} title="Add API document">
         <form onSubmit={submitApiDocument} className="space-y-3">

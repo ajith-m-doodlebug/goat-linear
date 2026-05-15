@@ -1,9 +1,9 @@
 import os
 import re
 import uuid
-from typing import Annotated
-
 import json
+from datetime import timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,8 @@ from app.schemas.document import DocumentResponse, DocumentUpdate, DocumentTestR
 from app.schemas.document_extensions import DocumentApiCreate, DocumentDatabaseCreate
 from app.services.document_crypto import encrypt_secret
 from app.services.document_db_validate import validate_database_document
-from app.core.deps import get_current_user, require_admin
+from app.core.deps import get_current_user
+from app.core.project_access import require_project_edit, require_project_view
 from app.core.config import get_settings
 from app.core.queue import get_queue
 from app.workers.ingest import run_ingest
@@ -24,7 +25,6 @@ from app.services.qdrant_client import get_qdrant
 from app.schemas.rag_config import resolve_embedding_for_kb
 from app.services.embedding_registry import encode_query as encode_query_with_model
 from app.services.document_test import run_document_connection_test
-from datetime import timezone
 
 router = APIRouter()
 
@@ -90,12 +90,27 @@ def _doc_to_response(doc: Document) -> DocumentResponse:
     )
 
 
-def _resolve_config_from_preset(preset_id: str | None, config: dict | None, user_id: str, db: Session) -> dict | None:
+def _resolve_config_from_preset(
+    preset_id: str | None,
+    config: dict | None,
+    user_id: str,
+    project_id: str,
+    db: Session,
+) -> dict | None:
     """If preset_id is set, load preset config and merge with optional config; else return config."""
     if not preset_id:
         return config
     from app.models.rag_config_preset import RagConfigPreset
-    preset = db.query(RagConfigPreset).filter(RagConfigPreset.id == preset_id, RagConfigPreset.user_id == user_id).first()
+
+    preset = (
+        db.query(RagConfigPreset)
+        .filter(
+            RagConfigPreset.id == preset_id,
+            RagConfigPreset.user_id == user_id,
+            RagConfigPreset.project_id == project_id,
+        )
+        .first()
+    )
     if not preset:
         return config
     base = dict(preset.config or {})
@@ -103,25 +118,35 @@ def _resolve_config_from_preset(preset_id: str | None, config: dict | None, user
     return base
 
 
+def _get_kb_in_project(db: Session, kb_id: str, project_id: str) -> KnowledgeBase:
+    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id, KnowledgeBase.project_id == project_id).first()
+    if not kb:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
+    return kb
+
+
 @router.get("", response_model=list[KnowledgeBaseResponse])
 def list_knowledge_bases(
+    project_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_project_view),
 ):
-    bases = db.query(KnowledgeBase).all()
+    bases = db.query(KnowledgeBase).filter(KnowledgeBase.project_id == project_id).order_by(KnowledgeBase.name).all()
     return [_kb_to_response(kb) for kb in bases]
 
 
 @router.post("", response_model=KnowledgeBaseResponse)
 def create_knowledge_base(
+    project_id: str,
     body: KnowledgeBaseCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_admin),
+    user: User = Depends(require_project_edit),
 ):
-    resolved = _resolve_config_from_preset(body.preset_id, body.config, str(user.id), db)
+    resolved = _resolve_config_from_preset(body.preset_id, body.config, str(user.id), project_id, db)
     collection_name = f"kb_{uuid.uuid4().hex[:16]}"
     kb = KnowledgeBase(
         id=str(uuid.uuid4()),
+        project_id=project_id,
         name=body.name,
         description=body.description,
         qdrant_collection_name=collection_name,
@@ -135,32 +160,30 @@ def create_knowledge_base(
 
 @router.get("/{kb_id}", response_model=KnowledgeBaseResponse)
 def get_knowledge_base(
+    project_id: str,
     kb_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_project_view),
 ):
-    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
-    if not kb:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
+    kb = _get_kb_in_project(db, kb_id, project_id)
     return _kb_to_response(kb)
 
 
 @router.patch("/{kb_id}", response_model=KnowledgeBaseResponse)
 def update_knowledge_base(
+    project_id: str,
     kb_id: str,
     body: KnowledgeBaseUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_admin),
+    user: User = Depends(require_project_edit),
 ):
-    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
-    if not kb:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
+    kb = _get_kb_in_project(db, kb_id, project_id)
     if body.name is not None:
         kb.name = body.name
     if body.description is not None:
         kb.description = body.description
     if body.preset_id is not None or body.config is not None:
-        resolved = _resolve_config_from_preset(body.preset_id, body.config, str(user.id), db)
+        resolved = _resolve_config_from_preset(body.preset_id, body.config, str(user.id), project_id, db)
         if resolved is not None:
             kb.config = resolved
     db.commit()
@@ -170,13 +193,12 @@ def update_knowledge_base(
 
 @router.delete("/{kb_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_knowledge_base(
+    project_id: str,
     kb_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_project_edit),
 ):
-    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
-    if not kb:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
+    kb = _get_kb_in_project(db, kb_id, project_id)
     db.delete(kb)
     db.commit()
     return None
@@ -184,27 +206,25 @@ def delete_knowledge_base(
 
 @router.get("/{kb_id}/documents", response_model=list[DocumentResponse])
 def list_documents(
+    project_id: str,
     kb_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_project_view),
 ):
-    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
-    if not kb:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
+    _get_kb_in_project(db, kb_id, project_id)
     docs = db.query(Document).filter(Document.knowledge_base_id == kb_id).order_by(Document.created_at.desc()).all()
     return [_doc_to_response(d) for d in docs]
 
 
 @router.post("/{kb_id}/documents/api", response_model=DocumentResponse)
 def create_api_document(
+    project_id: str,
     kb_id: str,
     body: DocumentApiCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_project_edit),
 ):
-    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
-    if not kb:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
+    _get_kb_in_project(db, kb_id, project_id)
     method = (body.method or "GET").strip().upper()
     if method not in ALLOWED_HTTP_METHODS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid HTTP method")
@@ -234,14 +254,13 @@ def create_api_document(
 
 @router.post("/{kb_id}/documents/database", response_model=DocumentResponse)
 def create_database_document(
+    project_id: str,
     kb_id: str,
     body: DocumentDatabaseCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_project_edit),
 ):
-    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
-    if not kb:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
+    _get_kb_in_project(db, kb_id, project_id)
     ok, err, tables = validate_database_document(
         body.engine,
         host=body.host,
@@ -284,17 +303,16 @@ def create_database_document(
 
 @router.post("/{kb_id}/upload", response_model=DocumentResponse)
 async def upload_document(
+    project_id: str,
     kb_id: str,
     file: UploadFile = File(...),
     config: str | None = Form(None),
     preset_id: str | None = Form(None),
     upload_type: str | None = Form(None),
     db: Session = Depends(get_db),
-    user: User = Depends(require_admin),
+    user: User = Depends(require_project_edit),
 ):
-    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
-    if not kb:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
+    _get_kb_in_project(db, kb_id, project_id)
     safe_name = _safe_basename(file.filename or "document")
     ext = os.path.splitext(safe_name)[1].lower()
     is_documentation_zip = (
@@ -334,7 +352,7 @@ async def upload_document(
                 config_dict = json.loads(config) if isinstance(config, str) else config
             except (json.JSONDecodeError, TypeError):
                 config_dict = None
-        doc_config = _resolve_config_from_preset(preset_id, config_dict, str(user.id), db)
+        doc_config = _resolve_config_from_preset(preset_id, config_dict, str(user.id), project_id, db)
 
     source_type = "documentation_zip" if is_documentation_zip else "file"
     doc = Document(
@@ -356,15 +374,14 @@ async def upload_document(
 
 @router.post("/{kb_id}/search")
 def search(
+    project_id: str,
     kb_id: str,
     body: dict,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_project_view),
 ):
     """Search knowledge base by query. Body: { \"query\": \"...\", \"top_k\": 5 }"""
-    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
-    if not kb:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
+    kb = _get_kb_in_project(db, kb_id, project_id)
     query_text = body.get("query") or ""
     top_k = min(int(body.get("top_k", 5)), 20)
     if not query_text.strip():
@@ -404,16 +421,15 @@ def search(
 
 @router.post("/{kb_id}/documents/{document_id}/test", response_model=DocumentTestResponse)
 def test_document(
+    project_id: str,
     kb_id: str,
     document_id: str,
     body: DocumentTestRequest,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_project_edit),
 ):
     """Verify connectivity: hybrid retrieval (file/url/zip), HTTP call (api), or SELECT preview (database)."""
-    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
-    if not kb:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
+    kb = _get_kb_in_project(db, kb_id, project_id)
     doc = db.query(Document).filter(Document.id == document_id, Document.knowledge_base_id == kb_id).first()
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
@@ -432,19 +448,21 @@ def test_document(
 
 @router.patch("/{kb_id}/documents/{document_id}", response_model=DocumentResponse)
 def update_document(
+    project_id: str,
     kb_id: str,
     document_id: str,
     body: DocumentUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_admin),
+    user: User = Depends(require_project_edit),
 ):
+    _get_kb_in_project(db, kb_id, project_id)
     doc = db.query(Document).filter(Document.id == document_id, Document.knowledge_base_id == kb_id).first()
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     if body.name is not None:
         doc.name = body.name
     if body.preset_id is not None or body.config is not None:
-        resolved = _resolve_config_from_preset(body.preset_id, body.config, str(user.id), db)
+        resolved = _resolve_config_from_preset(body.preset_id, body.config, str(user.id), project_id, db)
         if resolved is not None:
             doc.config = resolved
     db.commit()
@@ -454,11 +472,13 @@ def update_document(
 
 @router.delete("/{kb_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document(
+    project_id: str,
     kb_id: str,
     document_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_project_edit),
 ):
+    _get_kb_in_project(db, kb_id, project_id)
     doc = db.query(Document).filter(Document.id == document_id, Document.knowledge_base_id == kb_id).first()
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
@@ -469,11 +489,13 @@ def delete_document(
 
 @router.post("/{kb_id}/documents/{document_id}/ingest", response_model=DocumentResponse)
 def trigger_ingest(
+    project_id: str,
     kb_id: str,
     document_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_project_edit),
 ):
+    _get_kb_in_project(db, kb_id, project_id)
     doc = db.query(Document).filter(Document.id == document_id, Document.knowledge_base_id == kb_id).first()
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")

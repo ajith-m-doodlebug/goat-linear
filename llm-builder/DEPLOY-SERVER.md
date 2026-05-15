@@ -47,7 +47,7 @@ Move containerd’s **root** to **`/data`** (same large disk as `/data/models`):
    `sudo rsync -aP /var/lib/containerd/ /data/containerd/`
 4. **Edit** `/etc/containerd/config.toml` — set the **`root`** line to **`/data/containerd`** (default is **`/var/lib/containerd`**). Leave **`state`** as **`/run/containerd`** unless your distro docs say otherwise. Back up the file before editing.
 5. **Start:** `sudo systemctl start containerd` then `sudo systemctl start docker`.
-6. **Check:** `docker pull hello-world` then **`docker pull vllm/vllm-openai:latest`** (or your **`HOST_MODELS_VLLM_IMAGE`**).
+6. **Check:** `docker pull hello-world` then **`docker pull vllm/vllm-openai:latest`** (or your **`HOST_MODELS_VLLM_IMAGE`**) and **`docker pull ghcr.io/ggml-org/llama.cpp:server-cuda`** (or your **`HOST_MODELS_LLAMACPP_IMAGE`**). `./setup.sh` pulls both if missing.
 
 If **`/etc/containerd/config.toml`** does not exist, your Docker package may manage containerd differently—see your distro’s Docker Engine + containerd docs.
 

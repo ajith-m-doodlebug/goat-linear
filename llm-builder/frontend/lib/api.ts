@@ -166,11 +166,7 @@ export const setupApi = {
     }
     return data;
   },
-  runSetup: (body: {
-    super_admin_email: string;
-    password: string;
-    setup_default_prompt: boolean;
-  }) =>
+  runSetup: (body: { super_admin_email: string; password: string }) =>
     fetch(`${getApiBase()}/api/v1/setup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.deps import require_admin
+from app.core.deps import require_super_admin
 from app.db.base import SessionLocal, get_db
 from app.models.host_model_instance import HostModelInstance
 from app.models.model_registry import ModelRegistry
@@ -132,13 +132,13 @@ def _background_start_host_model(instance_id: str) -> None:
 
 
 @router.get("", response_model=list[HostModelInstanceResponse])
-def list_host_models(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def list_host_models(db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
     rows = db.query(HostModelInstance).order_by(HostModelInstance.created_at.desc()).all()
     return [_to_response(r) for r in rows]
 
 
 @router.get("/preflight")
-def get_host_models_preflight(_: User = Depends(require_admin)):
+def get_host_models_preflight(_: User = Depends(require_super_admin)):
     return preflight_status()
 
 
@@ -147,7 +147,7 @@ def create_host_model(
     body: HostModelInstanceCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_admin),
+    user: User = Depends(require_super_admin),
 ):
     served = body.served_model_name.strip()
     if db.query(HostModelInstance).filter(HostModelInstance.served_model_name == served).first():
@@ -201,7 +201,7 @@ def update_host_model(
     instance_id: str,
     body: HostModelInstanceUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_super_admin),
 ):
     item = _get_instance(db, instance_id)
     if body.name is not None:
@@ -224,7 +224,7 @@ def start_host_model(
     instance_id: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_super_admin),
 ):
     item = _get_instance(db, instance_id)
     try:
@@ -245,7 +245,7 @@ def start_host_model(
 def stop_host_model(
     instance_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_super_admin),
 ):
     item = _get_instance(db, instance_id)
     try:
@@ -268,7 +268,7 @@ def stop_host_model(
 def health_host_model(
     instance_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_super_admin),
 ):
     item = _get_instance(db, instance_id)
     ok, msg = check_health(item, read_timeout=30.0)
@@ -283,7 +283,7 @@ def health_host_model(
 def logs_host_model(
     instance_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_super_admin),
 ):
     item = _get_instance(db, instance_id)
     try:
@@ -302,7 +302,7 @@ def register_hosted_model(
     instance_id: str,
     body: HostModelRegisterRequest,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_super_admin),
 ):
     item = _get_instance(db, instance_id)
     public_base = client_facing_base_url(item)
@@ -354,7 +354,7 @@ def register_hosted_model(
 def delete_host_model(
     instance_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_super_admin),
 ):
     item = _get_instance(db, instance_id)
     try:
